@@ -239,8 +239,7 @@ class PerceiverPoseEncoder(nn.Module):
 
 
 def build_pose_encoder(cfg, pose_dim: int, encoder_type: str) -> nn.Module:
-    """Factory duy nhất cho mọi pose encoder — dùng chung bởi SLTTransformer
-    (models/slt_transformer.py) và GlossCTCModel (models/gloss_ctc_head.py, P7)."""
+    """Factory duy nhất cho mọi pose encoder — dùng bởi SLTTransformer (models/slt_transformer.py)."""
     if encoder_type == "transformer":
         return TransformerPoseEncoder(cfg, pose_dim)
     if encoder_type == "stgcn":

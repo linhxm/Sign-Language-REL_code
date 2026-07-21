@@ -19,6 +19,9 @@ spm.model
 spm.vocab
 train_text.txt
 
+# Dataset poses (large, regenerated)
+*.zip
+
 # OS junk
 .DS_Store
 Thumbs.db

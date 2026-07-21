@@ -1,12 +1,14 @@
 """
-Orchestrator — chạy TOÀN BỘ ma trận thí nghiệm (baseline sàn + Exp.1/4/7/8/9/11/15 + P7 + ablation)
-cho MỘT subset ratio, trong MỘT process Python duy nhất (không gọi rời `!python ...` từng cell).
+Orchestrator — chạy TOÀN BỘ ma trận thí nghiệm (baseline sàn + so sánh 6 encoder / 8 thuật toán RL
+/ reward ablation / latency) cho MỘT subset ratio, trong MỘT process Python duy nhất (không gọi rời
+`!python ...` từng cell).
 
-Đây là điểm vào DUY NHẤT khuyến nghị dùng trên Kaggle:
+Đây là điểm vào DUY NHẤT khuyến nghị dùng trên Kaggle. Mức báo cáo CHÍNH của repo là 5% (train 5%
+split train, dev/test LUÔN full):
 
-    python run_all.py --subset 0.25
-    python run_all.py --subset 0.5      # chạy khi nào sẵn sàng, không bắt buộc ngay sau 0.25
-    python run_all.py --subset 1.0      # chạy sau cùng — có thể cần NHIỀU session (xem dưới)
+    python run_all.py --subset 0.05     # mức báo cáo chính (toàn ma trận, ~6-9h)
+    python run_all.py --subset 0.25     # chạy thêm khi có quota
+    python run_all.py --subset 1.0      # có thể cần NHIỀU session (xem dưới)
 
 RESUMABLE: mỗi bước con ghi 1 file marker `<log_dir>/.done_<key>` khi xong. Nếu Kaggle hết giờ
 session (~12h) giữa chừng, chỉ cần bấm chạy LẠI ĐÚNG LỆNH TRÊN — mọi bước đã xong tự động bị bỏ
@@ -18,14 +20,19 @@ Một bước lỗi (vd `graph_transformer` OOM — đã cảnh báo trong docs)
 làm hỏng toàn bộ ma trận còn lại — xem hàm `step()`.
 
 Muốn giới hạn phạm vi (vd chỉ core, chạy nhanh để kiểm tra luồng), dùng --groups:
-    python run_all.py --subset 0.25 --groups core,encoders
-Mặc định --groups all = chạy hết (đúng tinh thần "1 lệnh cho tất cả" của toàn bộ ma trận).
+    python run_all.py --subset 0.05 --groups core,encoders
+Mặc định --groups all = chạy hết. Muốn chọn từng encoder/algo riêng lẻ (linh hoạt hơn) dùng
+`train_select.py` (single / encoder_allrl / rl_allenc).
+
+Các thí nghiệm liên quan GLOSS (P7 two-stage pose→gloss→text) và RL NGOÀI DECODER (frame/landmark
+selection, decode-policy) đã được GỠ khỏi pipeline này — xem docs/2_Huong_Phat_Trien.md (hướng phát
+triển tương lai).
 
 Cuối MỖI lần chạy (dù --groups gì, dù có lỗi ở vài bước), tự động sinh lại:
     <work_dir>/comparison_table.csv/.md   -- 1 bảng gộp mọi run (scripts/aggregate_results.py)
-    <work_dir>/report/tables/*.csv/.md/.tex -- 6 bảng đã lọc theo từng câu hỏi so sánh + 3 bảng
+    <work_dir>/report/tables/*.csv/.md/.tex -- các bảng đã lọc theo từng câu hỏi so sánh + 3 bảng
                                               LaTeX dán thẳng vào paper (scripts/make_report.py)
-    <work_dir>/report/figures/*.png/.pdf  -- 5 biểu đồ so sánh
+    <work_dir>/report/figures/*.png/.pdf  -- các biểu đồ so sánh
 Không cần chạy thêm lệnh nào khác để có bảng/hình dùng viết báo cáo.
 """
 import argparse, os, sys, time, json, traceback
@@ -37,21 +44,17 @@ from data.tokenizer import Tokenizer
 from data.dataset import make_loaders
 from models.slt_transformer import SLTTransformer
 from main import run_experiment, _ensure_tokenizer, set_seed
-from main_twostage import run_twostage
 from training.train_scst import train_scst
 from training.train_ppo import train_ppo
 from training.train_xe import evaluate
-from training.train_selection_policy import train_selection_policy
-from training.train_decode_policy import train_decode_policy
-from scripts.eval_baselines import run_baseline_trivial, run_baseline_selection, run_baseline_temp
+from scripts.eval_baselines import run_baseline_trivial
 from scripts import aggregate_results as agg
 from scripts.measure_latency import measure
 from scripts.make_report import generate_report
 
 ALL_ENCODERS = ["transformer", "stgcn", "gcn", "graph_transformer", "tcn", "perceiver"]
 OTHER_ALGOS = ["ppo", "mrt", "raml", "dpo"]
-GROUP_ORDER = ["core", "encoders", "algos", "ablations", "reward", "twostage",
-              "selection", "decode", "latency"]
+GROUP_ORDER = ["core", "encoders", "algos", "ablations", "reward", "latency"]
 
 
 # --------------------------------------------------------------------------- resumable step runner
@@ -226,39 +229,6 @@ def run_reward_ablation(cfg, subset, pct, wd, core_xe_ckpt, tokenizer):
         cfg.train.reward_length_penalty = orig_len
 
 
-def run_twostage_group(cfg, subset, pct, wd):
-    log_dir = os.path.join(wd, f"p7_twostage_transformer_subset{pct}")
-    step("p7_twostage", log_dir, run_twostage, cfg, subset, "transformer", "p7_twostage")
-
-
-def run_selection_group(cfg, subset, pct, wd, core_xe_ckpt, tokenizer, train_loader, dev_loader):
-    baseline_dir = os.path.join(wd, f"baseline_transformer_subset{pct}")
-    step("baseline_selection", baseline_dir, run_baseline_selection, subset, "transformer",
-        core_xe_ckpt)
-
-    variants = [("frame", "topk"), ("frame", "adaptive"), ("landmark", "topk")]
-    log_dir = os.path.join(wd, f"run1_transformer_subset{pct}_selectpolicy")
-    for target, mode in variants:
-        def _fn(target=target, mode=mode):
-            model = SLTTransformer(cfg, vocab_size=tokenizer.vocab_size, pose_dim=cfg.data.pose_dim,
-                                   encoder_type="transformer")
-            train_selection_policy(model, train_loader, dev_loader, tokenizer, cfg, log_dir,
-                                   core_xe_ckpt, target=target, mode=mode)
-        step(f"selectpolicy_{target}_{mode}", log_dir, _fn)
-
-
-def run_decode_group(cfg, subset, pct, wd, core_xe_ckpt, tokenizer, train_loader, dev_loader):
-    baseline_dir = os.path.join(wd, f"baseline_transformer_subset{pct}")
-    step("baseline_temp", baseline_dir, run_baseline_temp, subset, "transformer", core_xe_ckpt)
-
-    log_dir = os.path.join(wd, f"run1_transformer_subset{pct}_decodepolicy")
-    def _fn():
-        model = SLTTransformer(cfg, vocab_size=tokenizer.vocab_size, pose_dim=cfg.data.pose_dim,
-                               encoder_type="transformer")
-        train_decode_policy(model, train_loader, dev_loader, tokenizer, cfg, log_dir, core_xe_ckpt)
-    step("decodepolicy", log_dir, _fn)
-
-
 def run_latency_group(cfg, subset, pct, wd, tokenizer):
     for enc in ALL_ENCODERS:
         ckpt = os.path.join(wd, f"run1_{enc}_subset{pct}", "best_xe.pt")
@@ -274,8 +244,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--subset", type=float, required=True, choices=[0.05, 0.25, 0.5, 1.0],
-                    help="Tỉ lệ train subset -- 0.05 (smoke-test toàn ma trận, KHÔNG dùng cho kết quả) "
-                         "/ 0.25/0.5/1.0 (chạy tay khi bạn sẵn sàng)")
+                    help="Tỉ lệ train subset -- 0.05 = mức BÁO CÁO CHÍNH (train 5%, dev/test full) "
+                         "/ 0.25/0.5/1.0 (chạy thêm khi có quota). dev/test luôn full ở mọi mức.")
     ap.add_argument("--groups", type=str, default="all",
                     help="Danh sách nhóm cách nhau bởi dấu phẩy, hoặc 'all' (mặc định). "
                          f"Nhóm hợp lệ: {','.join(GROUP_ORDER)}")
@@ -316,7 +286,7 @@ def main():
             run_algos(cfg, subset, pct, wd, core_log_dir, tokenizer)
 
     # Các nhóm dưới đây cần train/dev/test loader "thô" (không qua run_experiment) + core_xe_ckpt.
-    need_raw_loader_groups = {"ablations", "reward", "selection", "decode"}
+    need_raw_loader_groups = {"ablations", "reward"}
     if need_raw_loader_groups & set(groups) and not os.path.exists(core_xe_ckpt):
         print(f"[!] Bỏ qua {need_raw_loader_groups & set(groups)}: chưa có {core_xe_ckpt} "
               f"(chạy --groups core trước).")
@@ -330,16 +300,6 @@ def main():
 
         if "reward" in groups:
             run_reward_ablation(cfg, subset, pct, wd, core_xe_ckpt, tokenizer)
-
-        if "selection" in groups:
-            run_selection_group(cfg, subset, pct, wd, core_xe_ckpt, tokenizer,
-                               train_loader, dev_loader)
-
-        if "decode" in groups:
-            run_decode_group(cfg, subset, pct, wd, core_xe_ckpt, tokenizer, train_loader, dev_loader)
-
-    if "twostage" in groups:
-        run_twostage_group(cfg, subset, pct, wd)
 
     if "latency" in groups:
         run_latency_group(cfg, subset, pct, wd, tokenizer)

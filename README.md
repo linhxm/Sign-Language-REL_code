@@ -1,11 +1,15 @@
 # SLT + RL — Dịch ngôn ngữ ký hiệu (pose-based) tối ưu bằng Reinforcement Learning
 
 Pipeline **video → pose 183-d → encoder → decoder → text** (PHOENIX-2014T), trong đó RL
-(SCST/PPO/...) fine-tune trực tiếp theo BLEU để khắc phục exposure bias của cross-entropy,
-và **mở rộng RL ra ngoài decoder** — chọn frame/landmark/chiến lược decode — làm cầu nối 2 môn
-(RL + Xử lý ảnh & video). Mọi khối trong sơ đồ dưới **đều đã có code + smoke-test**; trích pose
-chạy trên Kaggle CPU-only qua `KAGGLE_NOTEBOOK_EXTRACT.ipynb`, train nặng chạy trên Kaggle T4×2
-qua `KAGGLE_NOTEBOOK.ipynb` (mỗi subset 25/50/100% chỉ 1 lệnh `run_all.py`, xem mục "Chạy").
+(SCST/PPO/MRT/RAML/DPO) fine-tune trực tiếp theo BLEU để khắc phục exposure bias của cross-entropy.
+Câu hỏi nghiên cứu chính: **RL có cải thiện BLEU so với CE-only không, và thuật toán RL / kiến trúc
+pose-encoder nào tốt nhất** — đo trên PHOENIX-2014T ở mức **5% dataset** (train 5% split train,
+dev/test luôn full).
+
+> **Phạm vi đã thu gọn (07/2026):** hai nhánh mở rộng — **gloss / two-stage P7** (pose→gloss→text)
+> và **RL ngoài decoder** (frame/landmark selection, decode-policy) — đã được **gỡ khỏi pipeline**
+> để tập trung báo cáo. Chúng được lưu làm hướng phát triển trong
+> [`docs/2_Huong_Phat_Trien.md`](docs/2_Huong_Phat_Trien.md).
 
 ## Sơ đồ kiến trúc
 
@@ -18,7 +22,6 @@ qua `KAGGLE_NOTEBOOK.ipynb` (mỗi subset 25/50/100% chỉ 1 lệnh `run_all.py`
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ L1 · DATA  (data/)                                                        [CV] │
 │  extract_poses (99+42+42) · dataset (norm/augment/curriculum) · tokenizer BPE  │
-│  gloss_vocab (BLANK=0/UNK=1, cho nhánh P7)                                     │
 └───────────────────────────────────┬──────────────────────────────────────────┘
                                      │ [B,T,183] + pose_mask
                                      v
@@ -41,35 +44,23 @@ qua `KAGGLE_NOTEBOOK.ipynb` (mỗi subset 25/50/100% chỉ 1 lệnh `run_all.py`
 │ L4 · PHASE 2 — RL FINE-TUNE DECODER  (training/)                          [RL] │
 │  SCST │ REINFORCE(no-baseline) │ Curriculum │ PPO(GAE+clip) │ A2C(no-clip)     │
 │  MRT  │ RAML                   │ DPO(preference tự sinh)                       │
-│                  <══>  compute_reward: BLEU + rep_penalty + len_penalty (+sem) │
-└──────────────┬──────────────────────────────────────┬────────────────────────┘
-               │ cùng cơ chế RL                        │
-               v                                       │
-┌───────────────────────────────────────────────────┐ │
-│ L5 · RL VƯỢT NGOÀI DECODER — mục F     [RL × CV]   │ │
-│  Frame select F.6 ⚠soft-mask · Adaptive F.9        │ │
-│  Landmark F.8 · Decode-policy F.5 · CTC-segment F.14│ │
-│  ⚠ zero-hoá frame, CHƯA giảm compute thật           │ │
-└───────────────────────────────────┬────────────────┘ │
-                                     │                   │
-┌────────────────────────────────────┼──────────────┐   │
-│ P7 · NHÁNH TWO-STAGE (song song)   v      [gloss]  │   │
-│  CTC pose→gloss (WER) ───> NMT gloss→text          │   │
-│  ⚠ cột orth: tự verify khi chạy, chưa test data thật│  │
-└────────────────────────────────────┬──────────────┘   │
-                                     v                   v
+│                  <══>  compute_reward: BLEU + rep_penalty + len_penalty        │
+└───────────────────────────────────┬──────────────────────────────────────────┘
+                                     v
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ L6 · ĐÁNH GIÁ & BẢNG SO SÁNH  (scripts/)                                       │
+│ L5 · ĐÁNH GIÁ & BẢNG SO SÁNH  (scripts/)                                       │
 │  eval_baselines (BASE cơ bản nhất) · measure_latency (6 encoder)               │
 │  aggregate_results: quét mọi *_results/*_history/latency_*.json                │
 │                     → comparison_table.csv / .md  (tự cập nhật)                │
 └──────────────────────────────────────────────────────────────────────────────┘
 
  Điều phối: configs/config.py · main.py (--encoder --algo --phase --subset, 1 experiment đơn lẻ)
-            main_twostage.py (P7) · run_all.py (chạy TOÀN BỘ ma trận cho 1 subset, resumable —
-            dùng cái này trên Kaggle) · KAGGLE_NOTEBOOK.ipynb (train, T4×2) ·
-            KAGGLE_NOTEBOOK_EXTRACT.ipynb (trích pose, CPU-only, chạy TRƯỚC)
- [CV] thị giác · [RL] policy · ⚠ giới hạn đã đính chính · 6 encoder / 8 RL / 5 RL-CV
+            run_all.py (chạy TOÀN BỘ ma trận cho 1 subset, resumable) ·
+            train_select.py (chọn phạm vi hẹp: single / encoder_allrl / rl_allenc)
+ Notebook: Sign-Language-REL_pose-extract.ipynb (trích pose, CPU-only, chạy TRƯỚC) ·
+           Sign-Language-REL_smoke-5pct.ipynb (extract 5% + train TOÀN BỘ ma trận ở 5%) ·
+           KAGGLE_NOTEBOOK.ipynb (train đa dạng: chọn nhóm/encoder/algo + % data qua 1 cell config)
+ [CV] thị giác · [RL] policy · ⚠ giới hạn đã đính chính · 6 encoder / 8 RL
 ```
 
 ## Baseline bắt buộc — đọc bảng so sánh TƯƠNG ĐỐI so với các sàn này
@@ -78,96 +69,69 @@ qua `KAGGLE_NOTEBOOK.ipynb` (mỗi subset 25/50/100% chỉ 1 lệnh `run_all.py`
 |---|---|---|
 | `xe` (CE-only) | mọi thuật toán RL | có sẵn trong mọi run (`--phase all`) |
 | `base_empty` / `base_most_frequent` | mọi model | sàn không-cần-model; PHOENIX lặp nhiều nên sàn này có thể > 0 đáng kể |
-| `base_frames_random` / `base_frames_uniform` | frame-selection policy (F.6/F.9) | cùng `keep_ratio`, cùng soft-mask; policy phải thắng **uniform** mới là "học được" |
-| `base_fixed_temp_*` | decode policy (F.5) | policy per-input phải thắng fixed-temp tốt nhất |
 
 ## Chạy
 
-Quy trình chuẩn giờ đây gồm **2 notebook Kaggle riêng biệt**, không còn chạy cell-by-cell:
+Quy trình chuẩn gồm **2 bước** (2 notebook Kaggle riêng biệt):
 
 ```bash
-# 1) BƯỚC 0 — trích pose (MỘT LẦN DUY NHẤT, mọi subset dùng chung).
-#    Trên Kaggle: KAGGLE_NOTEBOOK_EXTRACT.ipynb, Accelerator = CPU-only (không tốn quota GPU).
-#    Local (nếu có máy đủ mạnh): tương tự lệnh dưới rồi upload thư mục out_dir thành Kaggle
-#    Dataset `phoenix-poses`.
+# 1) BƯỚC 0 — trích pose (MỘT LẦN, mọi subset dùng chung).
+#    Trên Kaggle: Sign-Language-REL_pose-extract.ipynb, Accelerator = CPU-only.
+#    (Muốn chỉ trích đúng 5% để chạy nhanh: dùng Sign-Language-REL_smoke-5pct.ipynb MODE="extract".)
 python data/extract_poses.py \
     --input_dir <PHOENIX-2014-T>/features/fullFrame-210x260px --out_dir ./poses_out
 
-# 2) TOÀN BỘ ma trận thí nghiệm cho 1 subset, MỘT lệnh (resumable — hết giờ session cứ chạy lại
-#    ĐÚNG LỆNH NÀY, các bước đã xong tự bỏ qua nhờ marker .done_*). Cuối mỗi lần chạy tự sinh
-#    lại bảng + biểu đồ so sánh trong <work_dir>/report/ (xem mục dưới), không cần lệnh nào khác:
-python run_all.py --subset 0.25   # rồi khi nào sẵn sàng:
-python run_all.py --subset 0.5
-python run_all.py --subset 1.0
-#    Muốn giới hạn phạm vi (debug nhanh): --groups core,encoders (mặc định --groups all)
+# 2) TRAIN. Mức báo cáo CHÍNH = 5%. MỘT lệnh cho toàn bộ ma trận, resumable (hết giờ session cứ
+#    chạy lại ĐÚNG lệnh, bước đã xong tự bỏ qua). Cuối mỗi lần chạy tự sinh bảng + biểu đồ trong
+#    <work_dir>/report/:
+python run_all.py --subset 0.05              # toàn ma trận ở 5% (~6-9h)
+python run_all.py --subset 0.05 --groups core,encoders   # giới hạn phạm vi để debug nhanh
+python run_all.py --subset 0.25              # chạy thêm khi có quota
 
-# 3) (Tuỳ chọn) Chạy tay 1 cấu hình đơn lẻ để debug -- không cần cho quy trình chuẩn ở trên,
-#    run_all.py đã tự gọi các hàm này cho TẤT CẢ encoder/algo/ablation:
-python main.py --subset 0.25 --encoder transformer --algo scst --phase all
-python main_twostage.py --subset 0.25 --encoder transformer
-python scripts/eval_baselines.py --kind trivial --subset 0.25
+# 3) (Tuỳ chọn) chạy hẹp/tay 1 cấu hình:
+python train_select.py --mode single --encoder transformer --algo scst --subset 0.05
+python main.py --subset 0.05 --encoder transformer --algo scst --phase all
+python scripts/eval_baselines.py --subset 0.05
 python scripts/aggregate_results.py --work_dir /kaggle/working --out /kaggle/working/comparison_table
-python scripts/make_report.py --work_dir /kaggle/working   # cũng tự chạy cuối mỗi run_all.py
+python scripts/make_report.py --work_dir /kaggle/working
 ```
+
+**Nhóm thí nghiệm hợp lệ cho `--groups`:** `core` (Transformer XE+SCST) · `encoders` (5 encoder còn
+lại × XE+SCST) · `algos` (PPO/MRT/RAML/DPO trên Transformer) · `ablations` (REINFORCE/A2C/Curriculum)
+· `reward` (4 reward combo) · `latency` (đo 6 encoder). `all` = tất cả.
 
 ## Bảng + biểu đồ cho báo cáo/paper
 
-`run_all.py` tự gọi `scripts/make_report.py` ở cuối mỗi lần chạy (chạy tay được, đọc lại kết quả
-đã có, không train gì thêm). Output trong `<work_dir>/report/`:
+`run_all.py` tự gọi `scripts/make_report.py` ở cuối mỗi lần chạy (chạy tay được, chỉ đọc lại kết
+quả đã có, không train gì thêm). Output trong `<work_dir>/report/`:
 
 | Đường dẫn | Nội dung |
 |---|---|
 | `tables/table_*.csv` `.md` | 6 bảng đã lọc sẵn: main (XE vs mọi algo RL) · encoders · reward ablation · ablation khác (REINFORCE/A2C/Curriculum) · baseline sàn · latency |
-| `tables/tab_main.tex` `tab_reward.tex` `tab_encresults.tex` | Dán thẳng vào `paper/sn-article.tex` (khớp `\label{tab:main}`/`tab:reward`/`tab:encresults`). Cột BLEU-1/ROUGE-L để `--` vì pipeline chỉ tính BLEU-4 — không bịa số |
-| `figures/*.png` `*.pdf` | 5 biểu đồ: BLEU theo epoch (XE vs mọi RL algo) · ΔBLEU theo subset (Exp.11) · trade-off reward ablation (Exp.9) · so sánh 6 encoder (Exp.4) · so sánh thuật toán (Exp.1/7). PNG xem nhanh, PDF vector để `\includegraphics` |
-
-Chạy tay: `python scripts/make_report.py --work_dir /kaggle/working [--subset 25]` (mặc định dùng
-subset lớn nhất đã có dữ liệu).
-
-Trên Kaggle: chạy `KAGGLE_NOTEBOOK_EXTRACT.ipynb` trước (dataset input: `phoenix-2014t`) để có
-Kaggle Dataset `phoenix-poses`. Sau đó `KAGGLE_NOTEBOOK.ipynb` (add 3 dataset: `phoenix-2014t`,
-`phoenix-poses`, `slt-rl-code`; Accelerator GPU T4×2) — mỗi subset chỉ 1 cell (`run_all.py
---subset ...`), cell cuối ra bảng so sánh + nén tải về.
+| `tables/tab_main.tex` `tab_reward.tex` `tab_encresults.tex` | Dán thẳng vào `paper/sn-article.tex`. Cột BLEU-1/ROUGE-L để `--` vì pipeline chỉ tính BLEU-4 — không bịa số |
+| `figures/*.png` `*.pdf` | 5 biểu đồ: BLEU theo epoch · ΔBLEU theo subset · trade-off reward ablation · so sánh 6 encoder · so sánh thuật toán |
 
 ## Compute (T4×2, ~30 GPU-h/tuần; epoch KHÔNG giảm theo subset)
 
-Ước tính cho riêng CORE (Transformer+SCST, XE→RL) — chạy **toàn bộ ma trận** (6 encoder, 5 algo,
-ablation, reward ablation, P7, selection/decode policy) sẽ tốn nhiều hơn đáng kể, xem cảnh báo
-trong `run_all.py` và `docs/1_Thuyet_Trinh_Tong_Hop.md §K`:
+`xe_epochs=80` / `rl_epochs=20` cố định cho mọi subset → thời gian ~tỉ lệ lượng dữ liệu train.
+**dev/test luôn full** (không co theo subset) nên 5% KHÔNG nhanh gọn gấp 20 lần 100%.
 
-| Subset | Total XE | Total RL | Total core | Toàn bộ ma trận (ước tính) |
-|--------|----------|----------|-------------|------------------------------|
-| 25%    | ~2.5h    | ~1h      | ~3.5h       | ~25-30h (vừa quota 1 tuần)   |
-| 50%    | ~5h      | ~2h      | ~7h         | lớn hơn đáng kể — trải ra nhiều tuần |
-| 100%   | ~10h     | ~4h      | ~14h (>1 session) | rất lớn — chạy dần theo `--groups`, không cần chạy hết trong 1 lần |
+| Subset | Toàn bộ ma trận (6 enc + 8 RL + reward + latency) |
+|--------|----------------------------------------------------|
+| **5%** (báo cáo chính) | **~6–9h** (gọn trong quota, có thể 1 session) |
+| 25%    | ~20–25h (vừa quota 1 tuần) |
+| 100%   | rất lớn — chạy dần theo `--groups`/`train_select.py`, nhiều session |
 
 ## Giới hạn đã đính chính (đọc trước khi diễn giải kết quả)
 
-- **GCN/GraphTransformer KHÔNG nhẹ hơn Transformer** (param đo thật ở sơ đồ trên) — chỉ ST-GCN nhẹ hơn.
-- **Frame selection = soft-mask** (zero-hoá, giữ nguyên độ dài chuỗi) — đo được "frame nào quan trọng", **chưa** chứng minh giảm compute.
-- **P7**: cột `orth` được code tự verify khi chạy, **chưa** chạy trên dữ liệu PHOENIX thật.
-- Mọi claim BLEU/WER chỉ có sau khi chạy Kaggle — smoke-test chỉ đảm bảo đúng shape/gradient, không đảm bảo "học tốt".
+- **GCN/GraphTransformer KHÔNG nhẹ hơn Transformer** (param đo thật ở sơ đồ) — chỉ ST-GCN nhẹ hơn.
+- Mọi claim BLEU chỉ có sau khi chạy Kaggle — smoke-test chỉ đảm bảo đúng shape/gradient.
+- Pipeline chỉ tính **BLEU-4** (sacrebleu) + rep_rate + len_ratio; chưa có BLEU-1/ROUGE-L.
 
-## Đọc sâu — chỉ còn 2 tài liệu
-
-Toàn bộ 14 file docs cũ đã được **gộp vào một tài liệu duy nhất**, tổ chức theo flow thuyết trình.
+## Đọc sâu
 
 | Tài liệu | Nội dung |
 |---|---|
-| [`docs/0_Architecture.md`](docs/0_Architecture.md) | Sơ đồ kiến trúc hệ thống (ASCII, luồng dữ liệu L1→L8) |
-| [`docs/1_Thuyet_Trinh_Tong_Hop.md`](docs/1_Thuyet_Trinh_Tong_Hop.md) | **Tài liệu chính** — xem mục lục bên dưới |
-
-**Phần I — theo flow thuyết trình** (12 slide, khớp 1-1 với [`slides/index.html`](../slides/index.html)):
-Cover · Bài toán · Pipeline base · Vấn đề · Giải pháp · Vì sao RL · Thuật toán · Reward · RL ngoài decoder · Thực nghiệm · Đọc kết quả · Kết luận.
-Mỗi slide có 🎙️ kịch bản nói · 🔬 phân tích sâu · ❓ câu hỏi phản biện.
-
-**Phần II — tra cứu** (code comment trỏ thẳng vào các mục này):
-
-| Mục | Nội dung | Mục | Nội dung |
-|---|---|---|---|
-| **§A** | Pipeline P1–P8 + đã loại | **§G** | Nhật ký thiết kế 41 mục |
-| **§B** | Khảo sát kiến trúc encoder | **§H** | Đề xuất luận văn (RQ, H1-H5, hạn chế) |
-| **§C** | Khảo sát 6 dataset | **§I** | Roadmap & rủi ro |
-| **§D** | Pipeline CV (pose, temporal, augment) | **§J** | Code review & 9 bug đã sửa |
-| **§E** | 13 experiment + baseline sàn | **§K** | **Hướng dẫn chạy để lấy số liệu** |
-| **§F** | Metric chi tiết | **§L** | References (đã xác minh nguồn) |
+| [`docs/0_Architecture.md`](docs/0_Architecture.md) | Sơ đồ kiến trúc hệ thống (ASCII, luồng dữ liệu) |
+| [`docs/1_Thuyet_Trinh_Tong_Hop.md`](docs/1_Thuyet_Trinh_Tong_Hop.md) | **Tài liệu chính** — flow thuyết trình + mục tra cứu §A–§L |
+| [`docs/2_Huong_Phat_Trien.md`](docs/2_Huong_Phat_Trien.md) | Hướng phát triển: nhánh gloss/P7 + RL-ngoài-decoder đã gỡ |

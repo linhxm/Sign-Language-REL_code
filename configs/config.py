@@ -26,13 +26,10 @@ class DataConfig:
     vocab_size: int = 3000      # subword (sentencepiece) BPE
     max_text_len: int = 60      # số token tối đa/câu (đã gồm <bos>/<eos>)
 
-    # Subset sizes (theo % của train split) -- chạy qua run_all.py --subset 0.25|0.5|1.0
-    # (epoch KHÔNG giảm theo subset -- xe_epochs/rl_epochs cố định, xem TrainConfig)
+    # Subset sizes (theo % của train split) -- chạy qua run_all.py --subset 0.05|0.25|0.5|1.0
+    # (epoch KHÔNG giảm theo subset -- xe_epochs/rl_epochs cố định, xem TrainConfig).
+    # 0.05 = mức báo cáo thực nghiệm CHÍNH của repo này: train 5% split train, dev/test LUÔN full.
     subset_ratios: List[float] = field(default_factory=lambda: [0.05, 0.25, 0.5, 1.0])
-
-    # Gloss (P7 two-stage, docs/1_Thuyet_Trinh_Tong_Hop.md §A) — cột `orth` trong PHOENIX-2014-T*.corpus.csv
-    use_gloss: bool = False     # bật để dataset trả thêm gloss_ids/gloss_raw (main_twostage.py)
-    gloss_vocab_size: int = 1200  # PHOENIX-2014T có ~1085 gloss riêng biệt (approx, verify khi build vocab thật)
 
 @dataclass
 class ModelConfig:
@@ -105,32 +102,12 @@ class TrainConfig:
     dpo_beta: float = 0.1               # hệ số nhiệt trong loss DPO (Rafailov et al. 2023)
     dpo_n_samples: int = 4              # số sample/input để chọn cặp (win, lose) theo reward
 
-    # Curriculum RL (C.12 + Reward 10 + Ý tưởng F.18) -- áp dụng cho train_scst.py
+    # Curriculum RL (C.12 + Reward 10) -- áp dụng cho train_scst.py
     rl_curriculum_epochs: int = 0       # >0: trong N epoch đầu, tăng dần w_rep/w_len từ 0 -> giá trị
                                         # config thật theo lịch tuyến tính; 0 = TẮT (dùng full weight ngay)
     rl_curriculum_length_sort: bool = False  # True: N epoch đầu duyệt batch theo thứ tự CÂU (text
-                                              # tham chiếu) ngắn->dài (data curriculum, Ý tưởng F.18)
+                                              # tham chiếu) ngắn->dài (data curriculum)
                                               # thay vì shuffle ngẫu nhiên -- xem data/dataset.py::LengthCurriculumSampler
-
-    # RL for decoding strategy (F.5) -- policy nhỏ chọn temperature/top-k theo từng input
-    decode_policy_temp_choices: List[float] = field(default_factory=lambda: [0.7, 1.0, 1.3])
-    decode_policy_epochs: int = 10
-    decode_policy_lr: float = 1e-4
-
-    # RL for frame/landmark selection (F.6/F.8/F.9) -- xem training/train_selection_policy.py
-    selection_policy_epochs: int = 15
-    selection_policy_lr: float = 1e-4
-    selection_policy_keep_ratio: float = 0.5   # tỉ lệ frame/landmark giữ lại ở mode "topk"
-    selection_policy_frame_penalty: float = 0.1  # phạt theo số frame giữ lại (khuyến khích nén)
-
-    # CTC gloss stage 1 (P7, docs/1_Thuyet_Trinh_Tong_Hop.md §A) -- pose -> gloss
-    ctc_epochs: int = 60
-    ctc_lr: float = 5e-4
-    # gloss2text stage 2 (P7) -- gloss -> text, NMT thuần text nhỏ
-    g2t_d_model: int = 128
-    g2t_n_layers: int = 3
-    g2t_epochs: int = 60
-    g2t_lr: float = 5e-4
 
     # Reward shaping: R = w_bleu*BLEU - w_rep*rep_penalty - w_len*length_penalty + w_bert*BERTScore.
     # Đặt một weight = 0.0 để TẮT thành phần đó -> phục vụ Experiment 2/9 (reward ablation).

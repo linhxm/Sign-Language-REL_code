@@ -9,24 +9,16 @@ import pandas as pd
 
 # PHOENIX-2014T phân chia: train/dev/test trong file annotation csv
 # Format: name|video|start|end|speaker|orth|translation
-# Ta chỉ cần: name (để load pose) và translation (text Đức)
+# Ta chỉ cần: name (để load pose) và translation (text Đức). Cột `orth` (gloss) KHÔNG dùng —
+# nhánh gloss/P7 đã gỡ khỏi pipeline (xem docs/2_Huong_Phat_Trien.md).
 
 class PhoenixSLTDataset(Dataset):
     def __init__(self, annotation_csv: str, pose_dir: str, tokenizer,
                  max_frames: int = 300, max_text_len: int = 60,
-                 subset_ratio: float = 1.0, seed: int = 42, gloss_vocab=None,
+                 subset_ratio: float = 1.0, seed: int = 42,
                  pose_dim: int = 183):
-        """gloss_vocab (data/gloss_vocab.py::GlossVocab, mặc định None): khi truyền vào, dataset đọc
-        thêm cột `orth` (gloss) và trả `gloss_ids`/`gloss_raw` -- dùng cho P7 two-stage
-        (docs/1_Thuyet_Trinh_Tong_Hop.md §A, main_twostage.py). None (mặc định) = hành vi cũ y nguyên, không đụng
-        tới `orth` -- không ảnh hưởng pipeline single-stage P1-P6 hiện có."""
         self.df = pd.read_csv(annotation_csv, sep="|")
         self.df = self.df.dropna(subset=["translation"]).reset_index(drop=True)
-        self.gloss_vocab = gloss_vocab
-        if self.gloss_vocab is not None:
-            if "orth" not in self.df.columns:
-                raise ValueError(f"gloss_vocab được truyền vào nhưng {annotation_csv} thiếu cột 'orth'")
-            self.df = self.df.dropna(subset=["orth"]).reset_index(drop=True)
 
         # Subset: cố định seed để reproducible
         if subset_ratio < 1.0:
@@ -89,18 +81,12 @@ class PhoenixSLTDataset(Dataset):
         if len(ids) > self.max_text_len:
             ids = ids[: self.max_text_len - 1] + [self.tokenizer.eos_id]
 
-        item = {
+        return {
             "pose": torch.from_numpy(pose),         # [T, D]
             "text_ids": torch.tensor(ids, dtype=torch.long),
             "text_raw": text,
             "name": name,
         }
-        if self.gloss_vocab is not None:
-            gloss_text = str(row["orth"])
-            gloss_ids = self.gloss_vocab.encode(gloss_text)
-            item["gloss_ids"] = torch.tensor(gloss_ids, dtype=torch.long)
-            item["gloss_raw"] = gloss_text
-        return item
 
 
 def collate_fn(batch, pad_id: int = 0):
@@ -118,22 +104,12 @@ def collate_fn(batch, pad_id: int = 0):
     L_max = text_pad.size(1)
     text_mask = (torch.arange(L_max)[None, :] >= text_lens[:, None])
 
-    out = {
+    return {
         "pose": pose_pad, "pose_mask": pose_mask, "pose_lens": pose_lens,
         "text_ids": text_pad, "text_mask": text_mask, "text_lens": text_lens,
         "text_raw": [b["text_raw"] for b in batch],
         "names": [b["name"] for b in batch],
     }
-    if "gloss_ids" in batch[0]:
-        glosses = [b["gloss_ids"] for b in batch]
-        gloss_lens = torch.tensor([g.size(0) for g in glosses], dtype=torch.long)
-        gloss_pad = pad_sequence(glosses, batch_first=True, padding_value=0)  # 0 = <blank>/<pad>
-        gloss_mask = (torch.arange(gloss_pad.size(1))[None, :] >= gloss_lens[:, None])
-        out["gloss_ids"] = gloss_pad
-        out["gloss_lens"] = gloss_lens
-        out["gloss_mask"] = gloss_mask
-        out["gloss_raw"] = [b["gloss_raw"] for b in batch]
-    return out
 
 
 class LengthCurriculumSampler(Sampler):

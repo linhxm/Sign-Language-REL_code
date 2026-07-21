@@ -46,7 +46,7 @@ from tqdm import tqdm
 # mediapipe cài được có `python/solutions/` ĐẦY ĐỦ trên đĩa nhưng top-level `mediapipe/__init__.py`
 # lại KHÔNG re-export `solutions` (do uninstall/reinstall bẩn) -> `mp.solutions` ném AttributeError.
 # Import thẳng submodule để né __init__ hỏng. (mediapipe >= 0.10.31 gỡ HẲN solutions -> phải ghim
-# <= 0.10.21, xem KAGGLE_NOTEBOOK_EXTRACT.ipynb.)
+# <= 0.10.21, xem Sign-Language-REL_pose-extract.ipynb.)
 try:
     mp_holistic = mp.solutions.holistic
 except AttributeError:

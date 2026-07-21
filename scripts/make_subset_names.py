@@ -1,11 +1,9 @@
 """Sinh danh sách TÊN sequence (cột `name`) mà loader sẽ THỰC SỰ cần cho một subset ratio,
-để `data/extract_poses.py --names_file` chỉ trích đúng phần đó — phục vụ smoke-test toàn pipeline
-ở subset nhỏ (vd 5%) mà KHÔNG phải extract cả 8257 sequence (~14h vô nghĩa).
+để `data/extract_poses.py --names_file` chỉ trích đúng phần đó — phục vụ chạy toàn pipeline ở
+subset nhỏ (vd 5%) mà KHÔNG phải extract cả 8257 sequence (~14h vô nghĩa).
 
 Danh sách = TOÀN BỘ dev + test (data/dataset.py KHÔNG subset 2 split này — luôn eval full)
           + train được sample ĐÚNG như dataset.py: df.dropna('translation').sample(frac, seed).
-Bao luôn biến thể two-stage (P7 dropna 'orth' TRƯỚC khi sample -> tập train khác) để run_all.py
-nhóm `twostage` không bị thiếu pose (thiếu -> dataset.py âm thầm thay vector 0, hỏng ngầm).
 
     python scripts/make_subset_names.py --subset 0.05 --out /kaggle/working/subset_names.txt
 """
@@ -25,12 +23,7 @@ def _train_names(csv: str, frac: float, seed: int) -> set:
     df = _read(csv)
     if frac >= 1.0:
         return set(df["name"])
-    names = set(df.sample(frac=frac, random_state=seed)["name"])
-    # Biến thể two-stage: dropna('orth') rồi mới sample (main_twostage.py dùng gloss_vocab).
-    if "orth" in df.columns:
-        d2 = df.dropna(subset=["orth"]).reset_index(drop=True)
-        names |= set(d2.sample(frac=frac, random_state=seed)["name"])
-    return names
+    return set(df.sample(frac=frac, random_state=seed)["name"])
 
 
 def main():

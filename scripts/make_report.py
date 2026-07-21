@@ -116,10 +116,7 @@ def build_ablations(rows):
 
 
 def build_baseline(rows):
-    out = [r for r in rows if r["method"] in
-          ("base_empty", "base_most_frequent", "base_frames_full", "base_frames_random",
-           "base_frames_uniform", "base_drop_body", "base_drop_lhand", "base_drop_rhand")
-          or (r["method"] or "").startswith("base_fixed_temp_")]
+    out = [r for r in rows if r["method"] in ("base_empty", "base_most_frequent")]
     out.sort(key=lambda r: (r["subset_pct"] or 0, str(r["method"])))
     return out
 
@@ -380,7 +377,7 @@ def generate_report(work_dir: str, out_dir: str = None, subset: int = None):
                  "final_avg_len_ratio"],
                 out_dir, "table_ablations", "REINFORCE/A2C/Curriculum -- ablation")
     _write_table(baseline_rows, ["subset_pct", "encoder", "method", "test_bleu4"],
-                out_dir, "table_baseline", "Baseline sàn (trivial/selection/temp)")
+                out_dir, "table_baseline", "Baseline sàn (empty / most-frequent)")
     _write_table(build_latency(rows),
                 ["encoder", "n_params", "latency_ms_per_sentence", "throughput_sentences_per_s",
                  "peak_memory_mb"],

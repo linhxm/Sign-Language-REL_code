@@ -1,9 +1,12 @@
 # 0. Kiến trúc hệ thống
 
+> Nhánh **gloss/P7** (pose→gloss→text) và **RL-ngoài-decoder** (frame/landmark/decode-policy) đã gỡ
+> khỏi pipeline — xem [`2_Huong_Phat_Trien.md`](2_Huong_Phat_Trien.md).
+
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║           Sign-Language-REL - KIẾN TRÚC HỆ THỐNG (pose-based SLT + RL)       ║
-║   luồng dữ liệu chảy từ trên xuống  -  [CV]=thị giác  [RL]=policy  [GL]=gloss║
+║           Sign-Language-REL - KIẾN TRÚC HỆ THỐNG (pose-based SLT + RL)        ║
+║        luồng dữ liệu chảy từ trên xuống  -  [CV]=thị giác  [RL]=policy         ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
                         ┌───────────────────────────┐
@@ -13,13 +16,13 @@
                                       │ pose 183-d
                                       v
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ L1 · DATA  (data/)                                                      [CV] │
-│  ┌──────────────┐ ┌───────────────┐ ┌──────────────┐ ┌───────────────────┐   │
-│  │ extract_poses│ │   dataset     │ │  tokenizer   │ │   gloss_vocab     │   │
-│  │ Holistic     │ │ norm·augment  │ │ SentencePiece│ │ BLANK=0 / UNK=1   │   │
-│  │ → 183-d      │ │ curriculum    │ │ BPE          │ │ (cho nhánh P7)    │   │
-│  │ 99+42+42     │ │ make_loaders  │ │ bos/eos/pad  │ │                   │   │
-│  └──────────────┘ └───────────────┘ └──────────────┘ └───────────────────┘   │
+│ L1 · DATA  (data/)                                                      [CV]  │
+│  ┌──────────────┐ ┌───────────────┐ ┌──────────────┐                          │
+│  │ extract_poses│ │   dataset     │ │  tokenizer   │                          │
+│  │ Holistic     │ │ norm·augment  │ │ SentencePiece│                          │
+│  │ → 183-d      │ │ curriculum    │ │ BPE          │                          │
+│  │ 99+42+42     │ │ make_loaders  │ │ bos/eos/pad  │                          │
+│  └──────────────┘ └───────────────┘ └──────────────┘                          │
 └────────────────────────────────────┬─────────────────────────────────────────┘
                                      │ [B,T,183] + pose_mask
                                      v
@@ -58,48 +61,20 @@
 │  │C.5 clip│ │ C.9       │ │  C.10      │ │C.7 pref│      │ + length_pen       ││
 │  └────────┘ └───────────┘ └────────────┘ └────────┘      │ + semantic (opt)   ││
 │                                                          └────────────────────┘│
-└──────────────┬──────────────────────────────────────────┬──────────────────────┘
-               │ cùng cơ chế RL                           │ test_results.json
-               v                                          │
-┌────────────────────────────────────────────────────┐    │ 
-│                                                    │    │
-│ L7 · RL VƯỢT NGOÀI DECODER - mục F   [RL × CV]     │    │
-│  ┌─────────────┐ ┌────────────┐ ┌───────────────┐  │    │
-│  │Frame sel F.6│ │Adaptive F.9│ │Landmark  F.8  │  │    │
-│  │   soft-mask │ │            │ │ (occlusion)   │  │    │
-│  └─────────────┘ └────────────┘ └───────────────┘  │    │
-│  ┌─────────────┐ ┌───────────────────────────────┐ │    │
-│  │Decode pol F5│ │CTC segment F.14 (forced-align)│ │    │
-│  └─────────────┘ └─────────────────┬─────────────┘ │    │
-│     soft-mask = zero-hoá frame, CHƯA giảm compute  │    │
-└────────────────────────────────────┼───────────────┘    │
-                                     │ đoạn gloss         │ 
-        ┌────────────────────────────┘                    │
-        │  (rẽ SONG SONG - cùng encoder L2 + vocab L1)    │
-        v                                                 │
-┌────────────────────────────────────────────────────┐    │
-│ P7 · NHÁNH TWO-STAGE GLOSS               [GL]      │    │
-│  ┌────────────────────┐      ┌──────────────────┐  │    │
-│  │ Stage1 CTC         │ ───> │ Stage2 NMT       │  │    │
-│  │ pose→gloss · WER   │      │ gloss→text       │  │    │
-│  │ blank=0·zero_inf   │      │ greedy_decode    │  │    │
-│  └────────────────────┘      └──────────┬───────┘  │    │
-│   cột orth: verify khi chạy, chưa test dữ liệu thật│    │
-└─────────────────────────────────────────┼──────────┘    │
-                                          │ test_results.json
-                                          v               v
+└────────────────────────────────────┬───────────────────────────────────────────┘
+                                     │ test_results.json
+                                     v
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│ L8 · ĐÁNH GIÁ & BẢNG SO SÁNH  (scripts/)                        [dùng chung]  │
+│ L7 · ĐÁNH GIÁ & BẢNG SO SÁNH  (scripts/)                        [dùng chung]  │
 │  ┌──────────────┐ ┌───────────────┐ ┌────────────────┐ ┌─────────────────────┐│
 │  │ evaluate()   │ │measure_latency│ │ eval_baselines │ │ aggregate_results   ││
-│  │ BLEU-4       │ │6 encoder→json │ │ BASE cơ bản:   │ │ quét *_results/     ││
-│  │              │ │               │ │ trivial·random/│ │  *_history/latency  ││
-│  │              │ │               │ │ uniform·fixtemp│ │ → comparison_table  ││
+│  │ BLEU-4       │ │6 encoder→json │ │ base_empty ·   │ │ quét *_results/     ││
+│  │              │ │               │ │ base_most_freq │ │  *_history/latency  ││
 │  └──────────────┘ └───────────────┘ └────────────────┘ └─────────────────────┘│
 └───────────────────────────────────────────────────────────────────────────────┘
 
  Điều phối: configs/config.py · main.py (--encoder --algo --phase --subset, 1 experiment đơn lẻ)
-            main_twostage.py (P7) · run_all.py (TOÀN BỘ ma trận cho 1 subset, resumable, dùng
-            trên Kaggle) · KAGGLE_NOTEBOOK.ipynb (train, T4×2) ·
-            KAGGLE_NOTEBOOK_EXTRACT.ipynb (trích pose, CPU-only, chạy TRƯỚC)
+            run_all.py (TOÀN BỘ ma trận cho 1 subset, resumable) · train_select.py (phạm vi hẹp)
+ Notebook:  Sign-Language-REL_pose-extract.ipynb (trích pose, CPU-only, chạy TRƯỚC) ·
+            Sign-Language-REL_smoke-5pct.ipynb (5%) · KAGGLE_NOTEBOOK.ipynb (train đa dạng, T4×2)
 ```
