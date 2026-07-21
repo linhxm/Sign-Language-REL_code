@@ -13,6 +13,13 @@ Ví dụ:
   python train_select.py --mode rl_allenc                        --algo ppo   --subset 0.25
   python train_select.py --mode all                                           --subset 1.0
 
+  # 2 run "train từng phần" ở 10%: (1) CE-vs-SCST trên transformer (reward mặc định),
+  # (2) encoder tốt nhất (TCN) + SCST, reward BLEU thuần (số 5% cho thấy đây là reward tốt nhất
+  #     trong 4 combo; penalty đều làm tệ hơn ở scale nhỏ):
+  python train_select.py --mode single --encoder transformer --algo scst --subset 0.10 --tag run1
+  python train_select.py --mode single --encoder tcn --algo scst --subset 0.10 --tag run1 \
+         --w_bleu 1.0 --w_rep 0.0 --w_len 0.0
+
 Tái dùng best_xe.pt qua nhiều session (cho subset 100% train không hết 1 session):
   # session 1: train XE (+scst) rồi tải best_xe.pt về, up thành dataset
   python train_select.py --mode single --encoder transformer --algo scst --subset 1.0
@@ -93,6 +100,15 @@ def main():
     ap.add_argument("--xe_ckpt", default=None,
                     help="Tái dùng best_xe.pt có sẵn (vd từ dataset) thay vì train lại XE — "
                          "dùng cho single/encoder_allrl khi tách XE và RL ra 2 session.")
+    # --- reward override (không cần sửa config.py/.ipynb) — chọn 1 trong 4 reward cũ cho run này.
+    #     4 reward = tổ hợp bật/tắt (w_rep, w_len) ∈ {0, 0.5}. KHÔNG dùng BERTScore. ---
+    ap.add_argument("--w_bleu", type=float, default=None, help="Ghi đè reward_bleu_weight (mặc định 1.0)")
+    ap.add_argument("--w_rep",  type=float, default=None,
+                    help="Ghi đè reward_repetition_penalty (0 hoặc 0.5). Số liệu 5%: rep≈0 nên penalty "
+                         "này gần như không giúp.")
+    ap.add_argument("--w_len",  type=float, default=None,
+                    help="Ghi đè reward_length_penalty (0 hoặc 0.5). Số liệu 5%: len penalty làm câu "
+                         "ngắn thêm và GIẢM BLEU -> nên để 0.0.")
     args = ap.parse_args()
 
     if args.mode == "all":
@@ -100,10 +116,19 @@ def main():
         return
 
     cfg = CFG
+    # Ghi đè reward weights từ CLI (nếu có) TRƯỚC khi build tokenizer/model — áp cho mọi run RL.
+    for attr, val in [("reward_bleu_weight", args.w_bleu),
+                      ("reward_repetition_penalty", args.w_rep),
+                      ("reward_length_penalty", args.w_len)]:
+        if val is not None:
+            setattr(cfg.train, attr, val)
+
     tok = _ensure_tokenizer(cfg)
     t0 = time.time()
     print(f"### mode={args.mode} encoder={args.encoder} algo={args.algo} "
           f"subset={args.subset} tag={args.tag} ###")
+    print(f"### reward: w_bleu={cfg.train.reward_bleu_weight} w_rep={cfg.train.reward_repetition_penalty} "
+          f"w_len={cfg.train.reward_length_penalty} ###")
 
     if args.mode == "single":
         do_single(cfg, args.encoder, args.algo, args.subset, args.tag, tok, args.xe_ckpt)

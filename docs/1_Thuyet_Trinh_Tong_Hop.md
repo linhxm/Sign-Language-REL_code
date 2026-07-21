@@ -75,7 +75,9 @@ Ba câu, không đi vào chi tiết:
 ### ❓ Câu hỏi dự kiến
 
 > [!question] "Em kỳ vọng BLEU bao nhiêu?"
-> Mốc tham chiếu: Camgoz 2018 end-to-end **9.58**; Sign Language Transformers 2020 **~21.8**; SOTA gloss-free hiện tại **~22–27** BLEU-4. Nhưng đề tài chạy trên **subset 25/50/100%** với model nhỏ, nên **con số tuyệt đối không phải mục tiêu**. Mục tiêu là **ΔBLEU giữa CE-only và CE+RL từ cùng checkpoint gốc**, cộng khoảng cách tới baseline sàn. Em sẽ nhấn lại ở slide 10.
+> Mốc tham chiếu: Camgoz 2018 end-to-end **9.58**; Sign Language Transformers 2020 **~21.8**; SOTA gloss-free hiện tại **~22–27** BLEU-4. Đề tài **báo cáo chính ở subset 5%** (train 5%, dev/test full) với model nhỏ, nên **con số tuyệt đối không phải mục tiêu** — mục tiêu là **ΔBLEU giữa CE-only và CE+RL từ cùng checkpoint gốc**, cộng khoảng cách tới baseline sàn.
+>
+> **📊 Kết quả thực nghiệm 5% (đã chạy):** BLEU-4 test chỉ ~4 (encoder tốt nhất **TCN 5.40**, Transformer 4.16), thấp hơn nhiều mốc 9.53 ở 100% pose-only — dễ hiểu vì mới 5% train. SCST 4.31 vs CE 4.16 (**+0.15**) **nằm trong nhiễu run-to-run (~0.5** — một lần chạy lại cùng cấu hình SCST chỉ đạt 3.75) → **CHƯA có bằng chứng RL vượt CE ở mức data này** (đúng H3, khớp Kiegeland 2021). Baseline sàn: `base_empty` **0.0**, `base_most_frequent` **0.19**. Toàn bộ hệ under-generate (len_ratio ≈ 0.10) nên BLEU bị brevity bóp, không phải lỗi lặp (rep ≈ 0).
 
 ---
 
@@ -516,11 +518,11 @@ Chứng minh RL là khung tối ưu cho **mọi quyết định rời rạc tron
 | F.2 | Multi-sample SCST | sample N câu/input, advantage theo nhóm | ✅ `rl_n_samples` | Cao — Exp 3 |
 | F.3 | PPO fine-tuning | (§C.4) | ✅ `train_ppo.py` | Cao nhất |
 | F.4 | Actor-Critic Transformer | ValueHead trên hidden decoder | ✅ `slt_transformer.py::ValueHead` | Trung bình |
-| F.5 | RL for decoding strategy | action = chọn temperature per-input; reward = BLEU | ✅ `train_decode_policy.py` | Trung bình |
-| F.6 | RL for frame selection | Bernoulli giữ/bỏ frame; reward = BLEU(model đóng băng) − phạt frame | ✅ `train_selection_policy.py` | Cao — Exp 8 |
+| F.5 | RL for decoding strategy | action = chọn temperature per-input; reward = BLEU | ❌ → hướng phát triển (`docs/2`) | Trung bình |
+| F.6 | RL for frame selection | Bernoulli giữ/bỏ frame; reward = BLEU(model đóng băng) − phạt frame | ❌ → hướng phát triển (`docs/2`) | Trung bình |
 | F.7 | RL for keyframe extraction | biến thể F.6 | ❌ trùng cơ chế F.6, không tách riêng | — |
-| F.8 | RL for landmark selection | chọn nhóm body/tay-trái/tay-phải (occlusion) | ✅ `train_selection_policy.py` — 1 quyết định/câu | Trung bình |
-| F.9 | RL for adaptive temporal sampling | tốc độ lấy mẫu thay đổi thay vì linspace | ✅ `train_selection_policy.py` (frame/adaptive) | Cao |
+| F.8 | RL for landmark selection | chọn nhóm body/tay-trái/tay-phải (occlusion) | ❌ → hướng phát triển (`docs/2`) — 1 quyết định/câu | Trung bình |
+| F.9 | RL for adaptive temporal sampling | tốc độ lấy mẫu thay đổi thay vì linspace | ❌ → hướng phát triển (`docs/2`) | Cao |
 | F.13 | RL for beam search policy | chọn nhánh beam theo reward cuối | ✅ `train_mrt.py` (`mrt_candidate_source="beam"`) | Thấp-TB |
 | F.14 | RL for sign segmentation | ranh giới gloss | ⚠️ hiện thực bằng **CTC forced-alignment**, không phải vòng RL riêng | Trung bình |
 | F.16 | RL for memory selection | chọn frame giữ trong attention | ⚠️ hiện thực **kiến trúc** (P6 Perceiver — gradient trực tiếp hiệu quả hơn) | Trung bình |
@@ -557,20 +559,19 @@ Chứng minh RL là khung tối ưu cho **mọi quyết định rời rạc tron
 
 "13 experiment, nhưng chỉ **2 cái bắt buộc**."
 
-- **Experiment 1 — CE vs SCST**: cùng checkpoint gốc, cả 3 subset. **Câu chuyện chính.**
-- **Experiment 9 — Reward ablation**: 8 tổ hợp bật/tắt trọng số → **bảng trung tâm của chương RL**.
+- **Experiment 1 — CE vs SCST**: cùng checkpoint gốc, **subset 5% (báo cáo chính)**. **Câu chuyện chính.**
+- **Experiment 9 — Reward ablation**: 4 tổ hợp bật/tắt trọng số → **bảng trung tâm của chương RL**.
 
 "Nhóm ưu tiên cao: Exp 7 (PPO vs SCST) · 11 (data size) · 4 (6 encoder) · 3 (multi-sample)."
 
 "Nhưng phần em nhấn nhất không phải danh sách experiment, mà là **baseline sàn**."
 
-1. **`trivial`** — `base_empty` và `base_most_frequent`. PHOENIX là bản tin thời tiết, **lặp rất nhiều** — câu phổ biến nhất tự nó đạt BLEU đáng kể **mà không cần model nào**. Không vượt sàn này thì BLEU vô nghĩa.
-2. **`selection`** — `base_frames_full/random/uniform` cùng `keep_ratio` và cùng soft-mask (import `_apply_frame_mask` để không lệch), cộng `base_drop_body/lhand/rhand`. Đối chứng Experiment 8 và F.8.
-3. **`temp`** — `base_fixed_temp_{0.7, 1.0, 1.3}` cùng seed. Đối chứng F.5.
+1. **`trivial`** — `base_empty` và `base_most_frequent`. PHOENIX là bản tin thời tiết, **lặp rất nhiều** — câu phổ biến nhất tự nó đạt BLEU đáng kể **mà không cần model nào**. Không vượt sàn này thì BLEU vô nghĩa. *(Số thật 5%: `base_empty` 0.0, `base_most_frequent` 0.19.)*
+2. **`selection` / `temp`** (đối chứng cho frame-selection F.8 và decode-temperature F.5) — đã **chuyển sang hướng phát triển** (`docs/2_Huong_Phat_Trien.md`), **KHÔNG** nằm trong report 5% hiện tại. Report chỉ có sàn `trivial`.
 
 > [!important] Câu chốt của slide 10
-> "Nguyên tắc: **mọi con số phải đọc tương đối so với sàn, không bao giờ đọc tuyệt đối**. Một BLEU 15 nghe có vẻ ổn cho tới khi biết `base_most_frequent` đạt 12."
-> *(⚠️ con số 15/12 hiện là **ví dụ giả định** — thay bằng số thật sau khi chạy, xem §K.)*
+> "Nguyên tắc: **mọi con số phải đọc tương đối so với sàn, không bao giờ đọc tuyệt đối**. BLEU-4 5.40 của TCN chỉ có nghĩa khi biết `base_most_frequent` chỉ đạt **0.19** và `base_empty` **0.0** — model vượt sàn rõ ràng, nhưng tuyệt đối vẫn rất thấp vì mới train 5%."
+> *(Con số trên là **số thật từ report 5%** — xem `comparison_table.csv` / §K.)*
 
 "Nếu hết quota GPU giữa chừng, ưu tiên tuyệt đối là Experiment 1, 9, 11 — đủ chứng minh luận điểm chính."
 
@@ -584,9 +585,16 @@ Nói ra được thì rất thuyết phục, vì chứng minh không phải kế
 - **H4** (Exp 4): ST-GCN đạt BLEU tương đương/gần Transformer với ít tham số hơn đáng kể (6.33M vs 8.26M) — graph inductive bias hợp data nhỏ.
 - **H5** *(đã thu hẹp phạm vi)* (Exp 8): Frame-selection policy giữ/cải thiện BLEU khi giảm `keep_frac`, **và phải thắng `base_frames_uniform` cùng keep_ratio**. Implementation soft-mask nên H5 chỉ kiểm chứng "tín hiệu frame quan trọng", **chưa** kiểm chứng compute-saving.
 
+**📊 Đối chiếu với kết quả 5% thật (chứng minh mình đo trung thực, không kết luận ngược):**
+- **H1** — *không được ủng hộ tin cậy*: SCST 4.31 > CE 4.16 (+0.15) nhưng **nhỏ hơn nhiễu run-to-run (~0.5)** → không khẳng định được RL thắng CE ở 5%.
+- **H2** — *không kiểm chứng được ở 5%*: `rep ≈ 0` ở **mọi** cấu hình (kể cả reward BLEU thuần) → không có reward-hacking lặp để phạt; length-penalty chỉ làm câu ngắn thêm và **giảm** BLEU.
+- **H3** — *ĐÚNG (trung lập)*: PPO 4.19 **không** vượt SCST 4.31 — kết quả hợp lệ, khớp Kiegeland 2021.
+- **H4** — *KHÔNG đúng*: ST-GCN 3.62 **<** Transformer 4.31; encoder mạnh nhất là **TCN 5.40** (7.47M, 108ms) — không phải ST-GCN.
+- **H5** — *chưa chạy*: frame-selection đã chuyển sang hướng phát triển (`docs/2_Huong_Phat_Trien.md`).
+
 **Biến nhiễu phải khai báo ở Exp 4:** ST-GCN dùng input **150-d hiệu dụng** (bỏ kênh visibility để 75 khớp cùng số kênh) so với 183-d của Transformer (§G.39).
 
-**5 câu hỏi nghiên cứu (RQ):** RQ1 SCST có cải thiện nhất quán qua 25/50/100%? · RQ2 thiết kế reward ảnh hưởng chất lượng thực thế nào? · RQ3 PPO có đáng độ phức tạp ở bài toán reward-thưa? · RQ4 kiến trúc encoder ảnh hưởng khả năng "hưởng lợi" từ RL? · RQ5 RL áp được cho quyết định rời rạc tầng thị giác không?
+**5 câu hỏi nghiên cứu (RQ):** RQ1 SCST có cải thiện nhất quán qua các subset (**chính: 5%**, mở rộng 25/50/100%)? · RQ2 thiết kế reward ảnh hưởng chất lượng thực thế nào? · RQ3 PPO có đáng độ phức tạp ở bài toán reward-thưa? · RQ4 kiến trúc encoder ảnh hưởng khả năng "hưởng lợi" từ RL? · RQ5 *(hướng phát triển)* RL áp được cho quyết định rời rạc tầng thị giác không?
 
 Bảng 13 experiment đầy đủ ở §E.
 
@@ -595,8 +603,8 @@ Bảng 13 experiment đầy đủ ở §E.
 > [!question] "Chạy 1 seed mà kết luận được à?"
 > Không, và em không giấu. RL variance cao, nên với hai cấu hình gần nhau — điển hình PPO vs SCST — kết luận từ 1 seed là không đủ. Nguyên tắc: chạy **≥2 seed** cho các cặp so sánh sát nhau nếu ngân sách cho phép, và **nói rõ là 1 seed** ở chỗ không đủ, kèm khuyến cáo đọc thận trọng (§H.6).
 
-> [!question] "Sao không chạy full dataset mà lại subset 25/50/100%?"
-> Ba lý do: (1) ngân sách ~30 GPU-h/tuần mà RL cần chạy nhiều lần; (2) subset **không phải hạn chế bị ép mà là một trục thí nghiệm miễn phí** — chính là Experiment 11; (3) ba mức subset (25/50/100%) dùng chung seed cố định, nên so sánh giữa các mức được kiểm soát (§G.31); 50/100% chạy thêm khi có quota.
+> [!question] "Sao không chạy full dataset mà lại subset 5% (báo cáo chính)?"
+> Ba lý do: (1) ngân sách ~30 GPU-h/tuần mà RL cần chạy nhiều lần; (2) subset **không phải hạn chế bị ép mà là một trục thí nghiệm miễn phí** — chính là Experiment 11; (3) các mức subset (5% chính, mở rộng 25/50/100%) dùng chung seed cố định, nên so sánh giữa các mức được kiểm soát (§G.31); 25/50/100% chạy thêm khi có quota.
 
 > [!question] "Nếu RL không cải thiện gì thì sao?"
 > Thì đó là kết quả và em báo cáo đúng như vậy kèm phân tích nguyên nhân — vẫn đúng tinh thần **Kiegeland & Kreutzer 2021**. Đề tài được thiết kế để **đo** chứ không phải để **thắng**. *(Code đã sửa để luôn lưu `last_rl.pt`, nên trường hợp "RL kém hơn CE" vẫn vào được bảng so sánh thay vì biến mất — §J.3.)*
@@ -704,7 +712,7 @@ Bảng metric chi tiết (định nghĩa, công cụ, trạng thái code) ở §
 | P4 | Pose → Graph Transformer | ✅ `encoders.py::GraphTransformerPoseEncoder` | Attention trên 75 khớp |
 | P5 | Pose → TCN → Transformer | ✅ `encoders.py::TCNPoseEncoder` | Conv1D dilated nén thời gian |
 | P6 | Pose → Perceiver → Decoder | ✅ `encoders.py::PerceiverPoseEncoder` | Nén T frame vào latent — tuyến tính thay `O(T²)` (Jaegle 2021) |
-| P7 | Two-stage: Pose → Gloss (CTC) → NMT → Text | ✅ `main_twostage.py` | ⚠️ **CHƯA verify trên dữ liệu thật** (Camgoz 2018 2-stage) |
+| P7 | Two-stage: Pose → Gloss (CTC) → NMT → Text | ❌ → hướng phát triển (`docs/2`) | Nhánh gloss đã gỡ khỏi pipeline; xem `docs/2_Huong_Phat_Trien.md` |
 | P8 | **RL fine-tuning layer** (SCST/PPO/MRT/RAML/DPO trên P1–P6) | ✅ cả 5 (`main.py --algo`) | RL loop không phụ thuộc encoder — chỉ cần memory `[B,T,D]`. P7 stage 2 vẫn CE-only |
 
 ### A.2. Bảng so sánh (tham số ĐO THẬT, `d_model=256`, vocab 3000)
@@ -862,7 +870,7 @@ Thứ tự ưu tiên (rẻ → đắt): **Landmark noise** (Gaussian nhỏ) → 
 | 4 | Transformer vs GCN (6 kiến trúc) | Cao | ✅ `models/encoders.py` |
 | 11 | Data size ablation | Cao | ✅ `subset_ratios` sẵn |
 | 2 | BLEU vs BLEU+Penalty | TB (con của #9) | ✅ |
-| 8 | RL frame selection | TB | ✅ `train_selection_policy.py` |
+| 8 | RL frame selection | TB | ❌ → hướng phát triển (`docs/2`) |
 | 10 | Decoder ablation | TB | ✅ đổi `n_dec_layers`/`d_model` |
 | 15 | Inference latency | TB | ✅ `scripts/measure_latency.py` |
 | 12 | Generalization gap | TB | ✅ `test_results.json` qua `--phase eval` |
@@ -895,8 +903,7 @@ Thiết kế **ablation 2 trục, mỗi lần chỉ đổi 1 biến** — KHÔNG
 | `--kind` | Baseline | Đối chứng cho | Vì sao bắt buộc |
 |---|---|---|---|
 | `trivial` | `base_empty`, `base_most_frequent` | **Mọi** model | PHOENIX lặp nhiều — câu train phổ biến nhất tự đạt BLEU đáng kể **không cần model**; không vượt sàn = BLEU vô nghĩa |
-| `selection` | `base_frames_full/random/uniform` (cùng `keep_ratio`, cùng soft-mask — import `_apply_frame_mask`), `base_drop_body/lhand/rhand` | Exp 8 (F.6/F.9), F.8 | Policy phải thắng **uniform-stride** (heuristic mạnh nhất không cần học) mới là "học được"; thắng mỗi full-frame chưa đủ |
-| `temp` | `base_fixed_temp_{0.7,1.0,1.3}` (cùng seed) | Decode policy F.5 | Policy per-input phải thắng fixed-temp tốt nhất mới hơn được 1 lần grid-search |
+| `selection` / `temp` | (frame-selection + decode-temperature baselines) | Exp 8, F.5–F.9 | **Đã chuyển hướng phát triển** (`docs/2_Huong_Phat_Trien.md`) — `eval_baselines.py` hiện chỉ còn `--kind trivial`. Khi khôi phục nhánh này thì baseline uniform-stride/fixed-temp là **bắt buộc** để chứng minh policy "học được" hơn heuristic |
 
 ```bash
 python scripts/eval_baselines.py --kind trivial   --subset 0.25
@@ -922,7 +929,7 @@ python scripts/eval_baselines.py --kind temp      --subset 0.25 --encoder transf
 
 **Exp 10 — Decoder ablation**: `n_dec_layers ∈ {2,4,6}`, `d_model ∈ {128,256,384}`, subset 25%. Câu hỏi: decoder lớn có tận dụng RL tốt hơn, hay overfit CE trước khi RL kịp phát huy?
 
-**Exp 11 — Data size ablation**: ΔBLEU (RL−CE) theo subset 25/50/100%. 2 giả thuyết cạnh tranh: RL lợi hơn ở data ít (exposure bias nặng) vs data nhiều (advantage ước lượng ổn định).
+**Exp 11 — Data size ablation**: ΔBLEU (RL−CE) theo subset (**hiện chỉ có 5%**: +0.15, trong nhiễu; mở rộng 25/50/100% khi có quota). 2 giả thuyết cạnh tranh: RL lợi hơn ở data ít (exposure bias nặng) vs data nhiều (advantage ước lượng ổn định).
 
 **Exp 12 — Generalization gap**: (train BLEU − test BLEU) của xe vs rl + 1 lần `evaluate()` trên train_loader. *Kỳ vọng:* RL giảm gap — bằng chứng gián tiếp cho cơ chế §B.
 
@@ -1023,7 +1030,7 @@ Xây dựng và đánh giá thực nghiệm pipeline **SLT (video/pose → text)
 
 ### H.2. Câu hỏi nghiên cứu
 
-1. **RQ1**: SCST có cải thiện BLEU/BERTScore so với CE thuần trên SLT data nhỏ, và có nhất quán qua 25/50/100% không?
+1. **RQ1**: SCST có cải thiện BLEU/BERTScore so với CE thuần trên SLT data nhỏ, và có nhất quán qua các subset (**chính: 5%**, mở rộng 25/50/100%) không?
 2. **RQ2**: Thiết kế reward (BLEU thuần vs +penalty vs +semantic) ảnh hưởng thế nào tới chất lượng thực (lặp, độ dài) — reward nào cân bằng nhất?
 3. **RQ3**: RL nâng cao hơn SCST (PPO) có đáng độ phức tạp thêm ở bài toán reward-thưa-cuối-câu?
 4. **RQ4**: Kiến trúc pose-encoder ảnh hưởng thế nào tới khả năng "hưởng lợi" từ RL?
@@ -1222,9 +1229,12 @@ Lệnh này (đọc kỹ docstring đầu `run_all.py`) tự chạy tuần tự,
 8. `aggregate_results` → `comparison_table.csv/.md` (tự chạy lại ở CUỐI MỖI lần gọi `run_all.py`,
    kể cả khi 1 vài bước ở trên lỗi/bị skip — luôn phản ánh đúng trạng thái hiện tại).
 9. `make_report` → `report/tables/*.csv/.md/.tex` (6 bảng đã lọc theo câu hỏi so sánh + 3 bảng
-   LaTeX dán thẳng `tab:main`/`tab:reward`/`tab:encresults`) và `report/figures/*.png/.pdf` (5
-   biểu đồ: BLEU theo epoch, ΔBLEU theo subset, trade-off reward ablation, so sánh encoder, so
-   sánh thuật toán) — cũng tự chạy lại mỗi lần. Chạy tay: `python scripts/make_report.py --work_dir /kaggle/working`.
+   LaTeX dán thẳng `tab:main`/`tab:reward`/`tab:encresults`) và `report/figures/*.png/.pdf` (**4
+   biểu đồ, cột có SỐ**: BLEU theo epoch — *RL rẽ nhánh từ đúng epoch chọn best_xe (warm-start) để
+   thấy "train XE tiếp vs chuyển RL"* —, trade-off reward ablation, so sánh 6 encoder, so sánh
+   thuật toán) — cũng tự chạy lại mỗi lần. *(Đã bỏ "ΔBLEU theo subset": mỗi subset train đủ epoch
+   độc lập nên so sánh giữa subset không cùng điều kiện → vô nghĩa.)* Chạy tay:
+   `python scripts/make_report.py --work_dir /kaggle/working`.
 
 > Nhánh **P7 two-stage** và **selection/decode policy (RL ngoài decoder)** đã gỡ — xem [[2_Huong_Phat_Trien]].
 

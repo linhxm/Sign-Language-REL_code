@@ -9,7 +9,11 @@ Output trong `--out_dir` (mặc định `<work_dir>/report/`):
                             reward ablation/ablation khác/baseline/latency)
     tables/*.tex         -- 3 bảng LaTeX dán thẳng vào paper/sn-article.tex
                             (khớp \\label{tab:main}/\\label{tab:reward}/\\label{tab:encresults})
-    figures/*.png + *.pdf -- 5 biểu đồ so sánh (PNG xem nhanh, PDF vector để \\includegraphics)
+    figures/*.png + *.pdf -- 4 biểu đồ (PNG xem nhanh, PDF vector để \\includegraphics):
+                             BLEU theo epoch (RL rẽ nhánh từ điểm warm-start XE) · reward ablation ·
+                             so sánh 6 encoder · so sánh thuật toán. Biểu đồ cột đều có số trên cột.
+                             (Đã bỏ 'ΔBLEU theo subset' vì so sánh giữa các subset không cùng điều
+                             kiện train nên vô nghĩa.)
 
 Usage (sau khi đã chạy `run_all.py --subset ...` ít nhất 1 lần):
     python scripts/make_report.py --work_dir /kaggle/working
@@ -244,48 +248,62 @@ def _savefig(fig, out_dir, name):
 
 
 def fig_bleu_vs_epoch(work_dir, subset_pct, out_dir):
+    """XE full + các nhánh RL BẮT ĐẦU TỪ ĐÚNG epoch mà best_xe.pt được chọn (warm-start), thay vì
+    mỗi đường vẽ từ epoch 0 riêng (gây rời rạc, khó đọc). Nhờ vậy thấy trực quan: từ điểm warm-start,
+    'train XE TIẾP' (đường XE chạy tiếp) so với 'CHUYỂN sang RL' (các nhánh RL rẽ ra). RL epoch 0
+    được nối thẳng từ điểm warm-start của XE để nhánh liền mạch."""
     run_dir = os.path.join(work_dir, f"run1_transformer_subset{subset_pct}")
-    curves = {}
-    for algo, fname in HISTORY_FILES.items():
+
+    def _load_ys(fname):
         path = os.path.join(run_dir, fname)
         if not os.path.exists(path):
-            continue
+            return None
         with open(path, encoding="utf-8") as f:
             hist = json.load(f)
         ys = [h.get("dev_bleu4") for h in hist if h.get("dev_bleu4") is not None]
-        if ys:
-            curves[algo] = ys
-    if not curves:
+        return ys or None
+
+    xe_ys = _load_ys(HISTORY_FILES["xe"])
+    # epoch mà best_xe được LẤY = epoch có dev BLEU cao nhất (train_xe.py lưu best theo dev BLEU).
+    warm = int(max(range(len(xe_ys)), key=lambda i: xe_ys[i])) if xe_ys else 0
+    xe_best = xe_ys[warm] if xe_ys else None
+
+    rl_curves = {a: _load_ys(f) for a, f in HISTORY_FILES.items() if a != "xe"}
+    rl_curves = {a: ys for a, ys in rl_curves.items() if ys}
+
+    if not xe_ys and not rl_curves:
         print(f"[i] Bỏ qua fig_bleu_vs_epoch: không có history nào trong {run_dir}.")
         return
-    fig, ax = plt.subplots(figsize=(6, 4))
-    for algo, ys in curves.items():
-        ax.plot(range(len(ys)), ys, marker="o", markersize=3, label=ALGO_LABELS.get(algo, algo))
-    ax.set_xlabel("Epoch"); ax.set_ylabel("Dev BLEU-4")
-    ax.set_title(f"BLEU theo epoch -- subset {subset_pct}%")
-    ax.legend(fontsize=8); ax.grid(alpha=0.3)
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    if xe_ys:
+        ax.plot(range(len(xe_ys)), xe_ys, marker="o", markersize=3,
+                label=ALGO_LABELS["xe"], color="#4C72B0", zorder=2)
+        ax.axvline(warm, ls="--", lw=1, color="gray", alpha=0.7, zorder=1)  # mốc warm-start
+        ax.scatter([warm], [xe_best], s=70, color="black", zorder=4)
+        ax.annotate(f"XE warm-start\n(ep {warm}, BLEU {xe_best:.2f})", (warm, xe_best),
+                    xytext=(6, -30), textcoords="offset points", fontsize=8)
+    for algo, ys in rl_curves.items():
+        if xe_best is not None:   # nối nhánh RL từ điểm warm-start của XE
+            xs = list(range(warm, warm + len(ys) + 1)); yy = [xe_best] + ys
+        else:
+            xs = list(range(len(ys))); yy = ys
+        ax.plot(xs, yy, marker="o", markersize=3, label=ALGO_LABELS.get(algo, algo), zorder=3)
+    ax.set_xlabel("Epoch (XE, rồi RL nối tiếp từ điểm warm-start)")
+    ax.set_ylabel("Dev BLEU-4")
+    ax.set_title(f"BLEU theo epoch -- subset {subset_pct}% (RL rẽ nhánh từ điểm chọn XE)")
+    ax.legend(fontsize=8, loc="lower right"); ax.grid(alpha=0.3)
     _savefig(fig, out_dir, "fig_bleu_vs_epoch")
 
 
-def fig_delta_bleu_by_subset(main_rows, out_dir):
-    by_subset = {}
-    for r in main_rows:
-        by_subset.setdefault(r["subset_pct"], {})[r["method"]] = r["test_bleu4"]
-    subs = sorted(s for s, d in by_subset.items() if "xe" in d and "scst" in d
-                 and d["xe"] is not None and d["scst"] is not None)
-    if not subs:
-        print("[i] Bỏ qua fig_delta_bleu_by_subset: cần cả xe và scst test_bleu4 ở ít nhất 1 subset.")
-        return
-    deltas = [by_subset[s]["scst"] - by_subset[s]["xe"] for s in subs]
-    fig, ax = plt.subplots(figsize=(5, 4))
-    bars = ax.bar([f"{s}%" for s in subs], deltas, color="#4C72B0")
-    ax.axhline(0, color="black", linewidth=0.8)
-    ax.set_ylabel("ΔBLEU-4 (SCST − CE)"); ax.set_title("Exp.11 -- ΔBLEU theo subset")
-    for b, d in zip(bars, deltas):
-        ax.annotate(f"{d:+.2f}", (b.get_x() + b.get_width()/2, b.get_height()),
-                   ha="center", va="bottom" if d >= 0 else "top", fontsize=8)
-    ax.grid(alpha=0.3, axis="y")
-    _savefig(fig, out_dir, "fig_delta_bleu_by_subset")
+def _annotate_bars(ax, bars, vals, fmt="{:.2f}"):
+    """Ghi số lên đỉnh mỗi cột (yêu cầu: biểu đồ cột phải có số ngay trên biểu đồ)."""
+    for b, v in zip(bars, vals):
+        ax.annotate(fmt.format(v), (b.get_x() + b.get_width() / 2, b.get_height()),
+                    ha="center", va="bottom", fontsize=9, fontweight="bold",
+                    xytext=(0, 2), textcoords="offset points")
+# (Đã bỏ fig_delta_bleu_by_subset: mỗi subset train ĐỦ epoch độc lập nên so sánh ΔBLEU GIỮA các
+#  subset không cùng điều kiện -> không có ý nghĩa. Muốn data-size ablation đúng cần thiết kế riêng.)
 
 
 def fig_reward_ablation(reward_rows, subset_pct, out_dir):
@@ -299,8 +317,8 @@ def fig_reward_ablation(reward_rows, subset_pct, out_dir):
     fig, ax = plt.subplots(figsize=(5, 4))
     for tag, r in pts:
         ax.scatter(r["final_avg_rep_rate"], r["test_bleu4"], s=60)
-        ax.annotate(tag, (r["final_avg_rep_rate"], r["test_bleu4"]), fontsize=8,
-                   xytext=(4, 4), textcoords="offset points")
+        ax.annotate(f"{tag}\nBLEU {r['test_bleu4']:.2f}", (r["final_avg_rep_rate"], r["test_bleu4"]),
+                    fontsize=8, xytext=(4, 4), textcoords="offset points")
     ax.set_xlabel("avg_rep_rate (tỉ lệ n-gram lặp)"); ax.set_ylabel("Test BLEU-4")
     ax.set_title(f"Exp.9 -- trade-off reward ablation (subset {subset_pct}%)")
     ax.grid(alpha=0.3)
@@ -320,7 +338,9 @@ def fig_encoder_comparison(encoder_rows, subset_pct, out_dir):
         return
     vals = [by_enc[e]["test_bleu4"] for e in encs]
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.bar([ENCODER_LABELS[e] for e in encs], vals, color="#55A868")
+    bars = ax.bar([ENCODER_LABELS[e] for e in encs], vals, color="#55A868")
+    _annotate_bars(ax, bars, vals)
+    ax.set_ylim(0, max(vals) * 1.15)
     ax.set_ylabel("Test BLEU-4"); ax.set_title(f"Exp.4 -- so sánh 6 encoder (subset {subset_pct}%)")
     plt.xticks(rotation=30, ha="right"); ax.grid(alpha=0.3, axis="y")
     _savefig(fig, out_dir, "fig_encoder_comparison")
@@ -335,7 +355,9 @@ def fig_algo_comparison(main_rows, subset_pct, out_dir):
         return
     vals = [sub_rows[a]["test_bleu4"] for a in algos]
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.bar([ALGO_LABELS[a] for a in algos], vals, color="#C44E52")
+    bars = ax.bar([ALGO_LABELS[a] for a in algos], vals, color="#C44E52")
+    _annotate_bars(ax, bars, vals)
+    ax.set_ylim(0, max(vals) * 1.15)
     ax.set_ylabel("Test BLEU-4"); ax.set_title(f"Exp.1/7 -- so sánh thuật toán (subset {subset_pct}%)")
     plt.xticks(rotation=20, ha="right"); ax.grid(alpha=0.3, axis="y")
     _savefig(fig, out_dir, "fig_algo_comparison")
@@ -388,7 +410,6 @@ def generate_report(work_dir: str, out_dir: str = None, subset: int = None):
     write_latex_encoders(encoder_rows_all, subset_pct, out_dir)
 
     fig_bleu_vs_epoch(work_dir, subset_pct, out_dir)
-    fig_delta_bleu_by_subset(main_rows, out_dir)
     fig_reward_ablation(reward_rows, subset_pct, out_dir)
     fig_encoder_comparison(encoder_rows_all, subset_pct, out_dir)
     fig_algo_comparison(main_rows, subset_pct, out_dir)

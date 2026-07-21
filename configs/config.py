@@ -26,10 +26,12 @@ class DataConfig:
     vocab_size: int = 3000      # subword (sentencepiece) BPE
     max_text_len: int = 60      # số token tối đa/câu (đã gồm <bos>/<eos>)
 
-    # Subset sizes (theo % của train split) -- chạy qua run_all.py --subset 0.05|0.25|0.5|1.0
+    # Subset sizes (theo % của train split) -- chạy qua run_all.py --subset 0.05|0.10|0.25|0.5|1.0
     # (epoch KHÔNG giảm theo subset -- xe_epochs/rl_epochs cố định, xem TrainConfig).
     # 0.05 = mức báo cáo thực nghiệm CHÍNH của repo này: train 5% split train, dev/test LUÔN full.
-    subset_ratios: List[float] = field(default_factory=lambda: [0.05, 0.25, 0.5, 1.0])
+    # 0.10 = mức test thêm số liệu. Các mức LỒNG NHAU theo seed 42 (5% ⊂ 10% ⊂ 25% ⊂ ...) nên khi
+    #        extract pose cho 10% là đã bao gồm 5% -- so sánh giữa các mức được kiểm soát.
+    subset_ratios: List[float] = field(default_factory=lambda: [0.05, 0.10, 0.25, 0.5, 1.0])
 
 @dataclass
 class ModelConfig:

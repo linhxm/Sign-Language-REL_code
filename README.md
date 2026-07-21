@@ -109,7 +109,7 @@ quả đã có, không train gì thêm). Output trong `<work_dir>/report/`:
 |---|---|
 | `tables/table_*.csv` `.md` | 6 bảng đã lọc sẵn: main (XE vs mọi algo RL) · encoders · reward ablation · ablation khác (REINFORCE/A2C/Curriculum) · baseline sàn · latency |
 | `tables/tab_main.tex` `tab_reward.tex` `tab_encresults.tex` | Dán thẳng vào `paper/sn-article.tex`. Cột BLEU-1/ROUGE-L để `--` vì pipeline chỉ tính BLEU-4 — không bịa số |
-| `figures/*.png` `*.pdf` | 5 biểu đồ: BLEU theo epoch · ΔBLEU theo subset · trade-off reward ablation · so sánh 6 encoder · so sánh thuật toán |
+| `figures/*.png` `*.pdf` | 4 biểu đồ (cột có SỐ trên biểu đồ): BLEU theo epoch (RL rẽ nhánh từ đúng điểm warm-start XE) · trade-off reward ablation · so sánh 6 encoder · so sánh thuật toán. *(Đã bỏ "ΔBLEU theo subset" vì mỗi subset train đủ epoch độc lập → so sánh giữa subset vô nghĩa.)* |
 
 ## Compute (T4×2, ~30 GPU-h/tuần; epoch KHÔNG giảm theo subset)
 
@@ -122,10 +122,21 @@ quả đã có, không train gì thêm). Output trong `<work_dir>/report/`:
 | 25%    | ~20–25h (vừa quota 1 tuần) |
 | 100%   | rất lớn — chạy dần theo `--groups`/`train_select.py`, nhiều session |
 
+## Kết quả thực nghiệm 5% (test BLEU-4, đã chạy)
+
+| Hạng mục | Số |
+|---|---|
+| Baseline sàn | `base_empty` **0.0** · `base_most_frequent` **0.19** |
+| 6 encoder (tốt→tệ) | **TCN 5.40** (7.47M, 108ms) · Transformer 4.16 · GCN 4.10 · Perceiver 4.08 (nhanh nhất 85ms) · ST-GCN 3.62 · GraphTransf 2.66 |
+| 8 RL trên Transformer (XE 4.16) | SCST **4.31** · A2C 4.31 · PPO 4.19 · DPO 4.16 · MRT 4.08 · RAML 3.99 · REINFORCE 3.91 · Curriculum 3.77 |
+| 4 reward (SCST) | bleu_only 3.98 · len_only 3.90 · both 3.87 · default 3.75 |
+
+**Kết luận:** BLEU tuyệt đối rất thấp (mới 5% train). **RL CHƯA vượt CE một cách tin cậy** — chênh SCST−CE (+0.15) nhỏ hơn nhiễu run-to-run (~0.5; một lần chạy lại cùng cấu hình SCST chỉ 3.75) → finding **H3-neutral**, khớp Kiegeland 2021. Encoder mạnh nhất là **TCN** (không phải ST-GCN → H4 sai). Hệ under-generate (len_ratio ≈ 0.10) nên BLEU bị brevity bóp; rep ≈ 0 (không degeneracy lặp).
+
 ## Giới hạn đã đính chính (đọc trước khi diễn giải kết quả)
 
-- **GCN/GraphTransformer KHÔNG nhẹ hơn Transformer** (param đo thật ở sơ đồ) — chỉ ST-GCN nhẹ hơn.
-- Mọi claim BLEU chỉ có sau khi chạy Kaggle — smoke-test chỉ đảm bảo đúng shape/gradient.
+- **GCN/GraphTransformer KHÔNG nhẹ hơn Transformer** (param đo thật) — chỉ ST-GCN nhẹ hơn (nhưng lại chậm, 294ms).
+- Số trên là **1 seed ở 5%** — RL variance cao, cần **≥2 seed** hoặc subset lớn hơn để claim chắc (§H.6).
 - Pipeline chỉ tính **BLEU-4** (sacrebleu) + rep_rate + len_ratio; chưa có BLEU-1/ROUGE-L.
 
 ## Đọc sâu

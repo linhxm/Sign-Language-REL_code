@@ -243,9 +243,11 @@ def run_latency_group(cfg, subset, pct, wd, tokenizer):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--subset", type=float, required=True, choices=[0.05, 0.25, 0.5, 1.0],
+    ap.add_argument("--subset", type=float, required=True, choices=[0.05, 0.10, 0.25, 0.5, 1.0],
                     help="Tỉ lệ train subset -- 0.05 = mức BÁO CÁO CHÍNH (train 5%, dev/test full) "
-                         "/ 0.25/0.5/1.0 (chạy thêm khi có quota). dev/test luôn full ở mọi mức.")
+                         "/ 0.10 = test thêm số liệu / 0.25/0.5/1.0 (chạy thêm khi có quota). "
+                         "dev/test luôn full ở mọi mức. LƯU Ý: subset lồng nhau theo seed 42 "
+                         "(5% ⊂ 10% ⊂ 25% ...) nên pose của 10% phải được extract sẵn (gồm cả 5%).")
     ap.add_argument("--groups", type=str, default="all",
                     help="Danh sách nhóm cách nhau bởi dấu phẩy, hoặc 'all' (mặc định). "
                          f"Nhóm hợp lệ: {','.join(GROUP_ORDER)}")
