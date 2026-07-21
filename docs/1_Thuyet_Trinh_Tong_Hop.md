@@ -870,6 +870,24 @@ Thứ tự ưu tiên (rẻ → đắt): **Landmark noise** (Gaussian nhỏ) → 
 | 13 | Cross-dataset transfer (How2Sign) | Thấp | ❌ cần loader riêng — ngoài đợt này |
 | 5, 6 | ~~RGB vs Pose / Fusion~~ | **ĐÃ LOẠI** | Cần pipeline RGB không có (§A.5) |
 
+### E.1b. Bản đồ coverage — encoder nào chạy RL nào
+
+Thiết kế **ablation 2 trục, mỗi lần chỉ đổi 1 biến** — KHÔNG chạy tích chéo đầy đủ 6×8 (= 48 lần train, nổ compute mà không trả lời thêm câu hỏi nào). Vì vậy:
+
+- **Trục encoder (Exp 4):** cố định thuật toán = **SCST**, đổi encoder → **cả 6 encoder đều được RL-decoder bằng SCST**.
+- **Trục thuật toán/reward (Exp 7/9):** cố định encoder = **Transformer**, đổi thuật toán/reward → chỉ Transformer chạy PPO/MRT/RAML/DPO + ablation + reward combo.
+
+| Encoder | XE | SCST | PPO/MRT/RAML/DPO | REINFORCE/A2C/Curriculum | Reward combo (×4) |
+|---|:--:|:--:|:--:|:--:|:--:|
+| P1 Transformer | ✅ | ✅ | ✅ | ✅ | ✅ |
+| P2 GCN | ✅ | ✅ | ❌ | ❌ | ❌ |
+| P3 ST-GCN | ✅ | ✅ | ❌ | ❌ | ❌ |
+| P4 Graph Transformer | ✅ | ✅ | ❌ | ❌ | ❌ |
+| P5 TCN | ✅ | ✅ | ❌ | ❌ | ❌ |
+| P6 Perceiver IO | ✅ | ✅ | ❌ | ❌ | ❌ |
+
+> Nhầm lẫn hay gặp: "RL-decoder chỉ chạy trên Transformer" — **sai**. Cả 6 encoder đều có SCST. Chỉ các RL algo *khác* (PPO/MRT/RAML/DPO) + ablation + reward mới cố định ở Transformer để cô lập biến. Muốn tích chéo thêm (vd `stgcn × 5 RL`) dùng `train_select.py --mode encoder_allrl --encoder stgcn` — ngoài phạm vi báo cáo hiện tại.
+
 ### E.2. Baseline bắt buộc — đọc mọi con số TƯƠNG ĐỐI so với sàn
 
 > `scripts/eval_baselines.py` sinh 3 nhóm base, merge vào `test_results.json` đúng định dạng `aggregate_results.py` quét — tự xuất hiện trong `comparison_table`.
