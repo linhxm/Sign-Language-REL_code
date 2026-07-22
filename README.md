@@ -3,8 +3,9 @@
 Pipeline **video → pose 183-d → encoder → decoder → text** (PHOENIX-2014T), trong đó RL
 (SCST/PPO/MRT/RAML/DPO) fine-tune trực tiếp theo BLEU để khắc phục exposure bias của cross-entropy.
 Câu hỏi nghiên cứu chính: **RL có cải thiện BLEU so với CE-only không, và thuật toán RL / kiến trúc
-pose-encoder nào tốt nhất** — đo trên PHOENIX-2014T ở mức **5% dataset** (train 5% split train,
-dev/test luôn full).
+pose-encoder nào tốt nhất** — đo trên PHOENIX-2014T qua **sweep 5 / 10 / 25% dataset** (train %split,
+dev/test luôn full) + thí nghiệm phụ How2Sign. Phát hiện chính: gain RL **xuất hiện theo quy mô dữ liệu**
+(không đáng tin ở 5%, rõ ở 10/25%), và xếp hạng encoder đảo theo data — xem mục Kết quả.
 
 > **Phạm vi đã thu gọn (07/2026):** hai nhánh mở rộng — **gloss / two-stage P7** (pose→gloss→text)
 > và **RL ngoài decoder** (frame/landmark selection, decode-policy) — đã được **gỡ khỏi pipeline**
@@ -81,13 +82,13 @@ Quy trình chuẩn gồm **2 bước** (2 notebook Kaggle riêng biệt):
 python data/extract_poses.py \
     --input_dir <PHOENIX-2014-T>/features/fullFrame-210x260px --out_dir ./poses_out
 
-# 2) TRAIN. Thiết kế báo cáo = 3 mức subset PHOENIX 5 / 10 / 25% (5% đã xong, làm mốc; 10/25% chạy
-#    tiếp khi có quota) + 1 THÍ NGHIỆM PHỤ ("train thử") trên How2Sign 10/25%. MỘT lệnh cho toàn bộ
+# 2) TRAIN. Thiết kế báo cáo = 3 mức subset PHOENIX 5 / 10 / 25% (ĐÃ CHẠY ĐỦ) + 1 THÍ NGHIỆM PHỤ
+#    ("train thử") trên How2Sign 10/25/50% (I3D vs pose). MỘT lệnh cho toàn bộ
 #    ma trận mỗi mức, resumable (hết giờ session cứ chạy lại ĐÚNG lệnh, bước đã xong tự bỏ qua).
 #    Cuối mỗi lần chạy tự sinh bảng + biểu đồ trong <work_dir>/report/:
 python run_all.py --subset 0.05              # toàn ma trận ở 5%  (~6-9h) — đã chạy
-python run_all.py --subset 0.10              # 10% (~12-18h)
-python run_all.py --subset 0.25              # 25% (~20-25h)
+python run_all.py --subset 0.10              # 10% (~12-18h) — đã chạy
+python run_all.py --subset 0.25              # 25% (~20-25h) — đã chạy
 python run_all.py --subset 0.05 --groups core,encoders   # giới hạn phạm vi để debug nhanh
 #    How2Sign (thí nghiệm phụ): train vào work_dir RIÊNG để tách dataset — pose trích bằng
 #    --mode video (xem data/extract_poses.py), rồi trỏ make_overview.py vào từng root (xem dưới).
@@ -114,13 +115,13 @@ quả đã có, không train gì thêm). Output trong `<work_dir>/report/`:
 |---|---|
 | `tables/table_*.csv` `.md` | 6 bảng đã lọc sẵn: main (XE vs mọi algo RL) · encoders · reward ablation · ablation khác (REINFORCE/A2C/Curriculum) · baseline sàn · latency |
 | `tables/tab_main.tex` `tab_reward.tex` `tab_encresults.tex` | Dán thẳng vào `paper/sn-article.tex`. Cột BLEU-1/ROUGE-L để `--` vì pipeline chỉ tính BLEU-4 — không bịa số |
-| `figures/*.png` `*.pdf` | 4 biểu đồ (cột có SỐ trên biểu đồ): BLEU theo epoch (RL rẽ nhánh từ đúng điểm warm-start XE) · trade-off reward ablation · so sánh 6 encoder · so sánh thuật toán. *(Đã bỏ "ΔBLEU theo subset" vì mỗi subset train đủ epoch độc lập → so sánh giữa subset vô nghĩa.)* |
+| `figures/*.png` `*.pdf` | 4 biểu đồ mỗi work_dir (cột có SỐ): BLEU theo epoch (RL rẽ nhánh từ đúng điểm warm-start XE) · trade-off reward ablation · so sánh 6 encoder · so sánh thuật toán. *(Biểu đồ ΔBLEU-theo-subset là biểu đồ CHÉO nhiều work_dir → dựng bằng notebook/`make_overview.py`, xem `analysis_out/figures/datasize_phoenix.png`.)* |
 
 ## Bảng TỔNG (pivot) gộp mọi subset + dataset — `scripts/make_overview.py`
 
-Khi đã có nhiều mức subset (5/10/25%) và/hoặc How2Sign, dùng `make_overview.py` để gộp TẤT CẢ vào
+Toàn bộ sweep (5/10/25%) + How2Sign đã gộp sẵn vào `analysis_out/overview.md` bằng `make_overview.py`:
 **một bảng pivot** (hàng = method/encoder, cột = subset%, tách theo dataset) — thay vì mở từng
-`comparison_table`. Chỉ đọc, không train. Ô `–` = subset/dataset đó CHƯA train (không bịa số).
+`comparison_table`. Chỉ đọc, không train. Ô `–` = subset/dataset đó chưa có run (không bịa số).
 
 ```bash
 # 1 dataset (mặc định phoenix):
@@ -155,27 +156,48 @@ Thực tế: zip toàn bộ `*.json` là đủ dựng lại mọi bảng — ma 
 
 | Subset | Toàn bộ ma trận (6 enc + 8 RL + reward + latency) |
 |--------|----------------------------------------------------|
-| **5%** (đã chạy, làm mốc) | **~6–9h** (gọn trong quota, có thể 1 session) |
-| **10%** | ~12–18h |
-| **25%** | ~20–25h (vừa quota 1 tuần) |
-| How2Sign 10/25% (phụ) | tương tự, work_dir riêng |
+| **5%** (đã chạy) | **~6–9h** (gọn trong quota, có thể 1 session) |
+| **10%** (đã chạy) | ~12–18h |
+| **25%** (đã chạy) | ~20–25h (vừa quota 1 tuần) |
+| How2Sign 10/25/50% (phụ, đã chạy) | I3D vs pose, work_dir riêng |
 | 100%   | rất lớn — chạy dần theo `--groups`/`train_select.py`, nhiều session |
 
-## Kết quả thực nghiệm 5% (test BLEU-4, đã chạy — 10/25% + How2Sign đang chờ)
+## Kết quả thực nghiệm — toàn bộ sweep 5/10/25% (test BLEU-4, đã chạy đủ)
 
-| Hạng mục | Số |
-|---|---|
-| Baseline sàn | `base_empty` **0.0** · `base_most_frequent` **0.19** |
-| 6 encoder (tốt→tệ) | **TCN 5.40** (7.47M, 108ms) · Transformer 4.16 · GCN 4.10 · Perceiver 4.08 (nhanh nhất 85ms) · ST-GCN 3.62 · GraphTransf 2.66 |
-| 8 RL trên Transformer (XE 4.16) | SCST **4.31** · A2C 4.31 · PPO 4.19 · DPO 4.16 · MRT 4.08 · RAML 3.99 · REINFORCE 3.91 · Curriculum 3.77 |
-| 4 reward (SCST) | bleu_only 3.98 · len_only 3.90 · both 3.87 · default 3.75 |
+Nguồn: `analysis_out/overview.md`. Test luôn là full 642 câu PHOENIX bất kể subset → so sánh được trực tiếp.
 
-**Kết luận:** BLEU tuyệt đối rất thấp (mới 5% train). **RL CHƯA vượt CE một cách tin cậy** — chênh SCST−CE (+0.15) nhỏ hơn nhiễu run-to-run (~0.5; một lần chạy lại cùng cấu hình SCST chỉ 3.75) → finding **H3-neutral**, khớp Kiegeland 2021. Encoder mạnh nhất là **TCN** (không phải ST-GCN → H4 sai). Hệ under-generate (len_ratio ≈ 0.10) nên BLEU bị brevity bóp; rep ≈ 0 (không degeneracy lặp).
+| Test BLEU-4 (Transformer core) | 5% | 10% | 25% |
+|---|---|---|---|
+| Sàn (empty / most-freq) | 0.0 / 0.19 | 0.0 / 0.19 | 0.0 / 0.19 |
+| XE (CE-only) | 4.16 | 5.04 | 5.86 |
+| SCST | 4.31 | 5.23 | 5.94 |
+| PPO | 4.19 | 5.28 | 6.31 |
+| **MRT (best RL)** | 4.08 | **5.80** | **6.49** |
+| **Best Δ (best RL − XE)** | **+0.15** | **+0.76** | **+0.63** |
+
+| 6 encoder (SCST BLEU-4) | 5% | 10% | 25% | Params |
+|---|---|---|---|---|
+| Transformer | 4.31 | 5.23 | 5.94 | 8.26M |
+| GCN | 4.10 | 5.55 | 7.27 | 9.38M |
+| ST-GCN | 3.62 | 4.99 | 6.74 | **6.33M** |
+| Graph-Transformer | 2.66 | 5.53 | **7.64** | 9.48M |
+| TCN | **5.40** | **6.00** | 7.47 | 7.47M |
+| Perceiver IO | 4.08 | 4.77 | 6.54 | 9.59M |
+
+Reward ablation (SCST): `bleu_only` **luôn tốt nhất** (3.98/5.19/5.96); mọi penalty đều giảm BLEU, `rep+len` sụp ở 10/25% (3.85/4.44).
+
+**How2Sign (thí nghiệm phụ, I3D vs pose, test BLEU-4):** I3D (video) XE→SCST = 2.11→2.22 / 3.28→3.52 / 4.25→4.35 · pose (99-d) = 1.67→1.59 / 1.76→1.93 / 1.62→1.25. **I3D ≫ pose** ở mọi mức, chỉ I3D scale theo data.
+
+**Kết luận (đọc qua cả sweep):**
+1. **Gain RL xuất hiện theo quy mô dữ liệu** — ở 5% Δ +0.15 < nhiễu ~0.5 (không tin cậy), nhưng ở 10/25% best-Δ +0.76/+0.63 vượt hẳn nhiễu, do **MRT/PPO** gánh (không phải SCST thuần) → **đảo ngược H1** (khớp Kiegeland 2021).
+2. **Xếp hạng encoder đảo theo data** — 5% TCN nhất & graph tệ nhất; 25% Graph-Transformer/GCN vượt Transformer (giờ tệ nhất), ST-GCN 6.74 > Transformer 5.94 với ít hơn 23% param → **H4 sai ở 5%, đúng ở 25%**.
+3. **Penalty reward chỉ tổn hại BLEU** — rep ≈ 0, câu đã quá ngắn (len_ratio 0.11→0.03) → không có reward-hacking để phạt (**H2 không được ủng hộ**).
+4. **How2Sign tái lập cùng kết luận** trên ASL + modality khác.
 
 ## Giới hạn đã đính chính (đọc trước khi diễn giải kết quả)
 
-- **GCN/GraphTransformer KHÔNG nhẹ hơn Transformer** (param đo thật) — chỉ ST-GCN nhẹ hơn (nhưng lại chậm, 294ms).
-- Số trên là **1 seed ở 5%** — RL variance cao, cần **≥2 seed** hoặc subset lớn hơn để claim chắc (§H.6).
+- **GCN/GraphTransformer KHÔNG nhẹ hơn Transformer** (param đo thật) — chỉ ST-GCN nhẹ hơn (và ở 25% cũng nhanh nhất, 28ms/36 sent-s; latency biến động theo độ dài chuỗi của subset nên đọc param làm trục ổn định).
+- Phần lớn là **1 seed** — RL variance cao (~0.5), nên ưu tiên **xu hướng lặp lại qua nhiều subset + nhiều method** hơn là 1 ô đơn lẻ; muốn claim chắc hơn cần ≥2 seed (§H.6).
 - Pipeline chỉ tính **BLEU-4** (sacrebleu) + rep_rate + len_ratio; chưa có BLEU-1/ROUGE-L.
 
 ## Đọc sâu
