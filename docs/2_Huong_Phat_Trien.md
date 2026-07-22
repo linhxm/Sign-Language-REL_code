@@ -1,7 +1,8 @@
 # Hướng phát triển tương lai — các nhánh ĐÃ GỠ khỏi pipeline chính
 
 Tài liệu này lưu lại hai hướng thí nghiệm đã được **gỡ khỏi pipeline train chính** (để tập trung
-báo cáo thực nghiệm trên nhánh single-stage pose→text + RL fine-tune decoder, ở mức 5% dataset).
+báo cáo thực nghiệm trên nhánh single-stage pose→text + RL fine-tune decoder, ở các mức subset
+PHOENIX 5 / 10 / 25% + thí nghiệm phụ How2Sign 10/25%).
 Chúng **không bị xoá khỏi ý tưởng** — ghi lại đây làm hướng mở rộng sau này, kèm đủ chi tiết thiết
 kế để cài lại khi cần.
 

@@ -1,12 +1,9 @@
 # 0. Kiến trúc hệ thống
 
-> Nhánh **gloss/P7** (pose→gloss→text) và **RL-ngoài-decoder** (frame/landmark/decode-policy) đã gỡ
-> khỏi pipeline — xem [`2_Huong_Phat_Trien.md`](2_Huong_Phat_Trien.md).
-
 ```
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║           Sign-Language-REL - KIẾN TRÚC HỆ THỐNG (pose-based SLT + RL)        ║
-║        luồng dữ liệu chảy từ trên xuống  -  [CV]=thị giác  [RL]=policy         ║
+║           Sign-Language-REL - KIẾN TRÚC HỆ THỐNG (pose-based SLT + RL)       ║
+║        luồng dữ liệu chảy từ trên xuống  -  [CV]=thị giác  [RL]=policy       ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
                         ┌───────────────────────────┐
@@ -16,13 +13,13 @@
                                       │ pose 183-d
                                       v
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ L1 · DATA  (data/)                                                      [CV]  │
-│  ┌──────────────┐ ┌───────────────┐ ┌──────────────┐                          │
-│  │ extract_poses│ │   dataset     │ │  tokenizer   │                          │
-│  │ Holistic     │ │ norm·augment  │ │ SentencePiece│                          │
-│  │ → 183-d      │ │ curriculum    │ │ BPE          │                          │
-│  │ 99+42+42     │ │ make_loaders  │ │ bos/eos/pad  │                          │
-│  └──────────────┘ └───────────────┘ └──────────────┘                          │
+│ L1 · DATA  (data/)                                                      [CV] │
+│  ┌──────────────┐ ┌───────────────┐ ┌──────────────┐                         │
+│  │ extract_poses│ │   dataset     │ │  tokenizer   │                         │
+│  │ Holistic     │ │ norm·augment  │ │ SentencePiece│                         │
+│  │ → 183-d      │ │ curriculum    │ │ BPE          │                         │
+│  │ 99+42+42     │ │ make_loaders  │ │ bos/eos/pad  │                         │
+│  └──────────────┘ └───────────────┘ └──────────────┘                         │
 └────────────────────────────────────┬─────────────────────────────────────────┘
                                      │ [B,T,183] + pose_mask
                                      v

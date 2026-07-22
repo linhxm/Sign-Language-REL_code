@@ -28,9 +28,11 @@ class DataConfig:
 
     # Subset sizes (theo % của train split) -- chạy qua run_all.py --subset 0.05|0.10|0.25|0.5|1.0
     # (epoch KHÔNG giảm theo subset -- xe_epochs/rl_epochs cố định, xem TrainConfig).
-    # 0.05 = mức báo cáo thực nghiệm CHÍNH của repo này: train 5% split train, dev/test LUÔN full.
-    # 0.10 = mức test thêm số liệu. Các mức LỒNG NHAU theo seed 42 (5% ⊂ 10% ⊂ 25% ⊂ ...) nên khi
-    #        extract pose cho 10% là đã bao gồm 5% -- so sánh giữa các mức được kiểm soát.
+    # THIẾT KẾ BÁO CÁO: 3 mức PHOENIX 0.05 / 0.10 / 0.25 (5% đã chạy làm mốc; 10/25% chạy tiếp khi có
+    #   quota) + thí nghiệm PHỤ How2Sign 10/25% ("train thử", train vào work_dir riêng để tách dataset).
+    #   train %split train, dev/test LUÔN full ở mọi mức. Các mức LỒNG NHAU theo seed 42
+    #   (5% ⊂ 10% ⊂ 25% ⊂ ...) nên extract pose cho 10% đã bao gồm 5% -- so sánh giữa các mức được
+    #   kiểm soát. Gộp mọi mức+dataset thành 1 bảng pivot bằng scripts/make_overview.py.
     subset_ratios: List[float] = field(default_factory=lambda: [0.05, 0.10, 0.25, 0.5, 1.0])
 
 @dataclass

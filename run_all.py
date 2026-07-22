@@ -3,12 +3,16 @@ Orchestrator — chạy TOÀN BỘ ma trận thí nghiệm (baseline sàn + so s
 / reward ablation / latency) cho MỘT subset ratio, trong MỘT process Python duy nhất (không gọi rời
 `!python ...` từng cell).
 
-Đây là điểm vào DUY NHẤT khuyến nghị dùng trên Kaggle. Mức báo cáo CHÍNH của repo là 5% (train 5%
-split train, dev/test LUÔN full):
+Đây là điểm vào DUY NHẤT khuyến nghị dùng trên Kaggle. Thiết kế báo cáo = 3 mức subset PHOENIX
+5 / 10 / 25% (train %split train, dev/test LUÔN full; 5% đã chạy làm mốc, 10/25% chạy tiếp khi có
+quota) + thí nghiệm PHỤ How2Sign 10/25% (train vào work_dir RIÊNG để tách dataset):
 
-    python run_all.py --subset 0.05     # mức báo cáo chính (toàn ma trận, ~6-9h)
-    python run_all.py --subset 0.25     # chạy thêm khi có quota
+    python run_all.py --subset 0.05     # 5% (toàn ma trận, ~6-9h) — đã chạy làm mốc
+    python run_all.py --subset 0.10     # 10% (~12-18h)
+    python run_all.py --subset 0.25     # 25% (~20-25h)
     python run_all.py --subset 1.0      # có thể cần NHIỀU session (xem dưới)
+
+Gộp mọi mức + dataset thành 1 bảng pivot: python scripts/make_overview.py --root phoenix=<wd> ...
 
 RESUMABLE: mỗi bước con ghi 1 file marker `<log_dir>/.done_<key>` khi xong. Nếu Kaggle hết giờ
 session (~12h) giữa chừng, chỉ cần bấm chạy LẠI ĐÚNG LỆNH TRÊN — mọi bước đã xong tự động bị bỏ
@@ -244,10 +248,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--subset", type=float, required=True, choices=[0.05, 0.10, 0.25, 0.5, 1.0],
-                    help="Tỉ lệ train subset -- 0.05 = mức BÁO CÁO CHÍNH (train 5%, dev/test full) "
-                         "/ 0.10 = test thêm số liệu / 0.25/0.5/1.0 (chạy thêm khi có quota). "
-                         "dev/test luôn full ở mọi mức. LƯU Ý: subset lồng nhau theo seed 42 "
-                         "(5% ⊂ 10% ⊂ 25% ...) nên pose của 10% phải được extract sẵn (gồm cả 5%).")
+                    help="Tỉ lệ train subset -- 3 mức BÁO CÁO 0.05 / 0.10 / 0.25 (5% đã chạy làm mốc; "
+                         "10/25% chạy tiếp khi có quota) / 0.5/1.0 mở rộng. dev/test luôn full ở mọi "
+                         "mức. LƯU Ý: subset lồng nhau theo seed 42 (5% ⊂ 10% ⊂ 25% ...) nên pose của "
+                         "10% phải được extract sẵn (gồm cả 5%). How2Sign: train vào work_dir riêng.")
     ap.add_argument("--groups", type=str, default="all",
                     help="Danh sách nhóm cách nhau bởi dấu phẩy, hoặc 'all' (mặc định). "
                          f"Nhóm hợp lệ: {','.join(GROUP_ORDER)}")

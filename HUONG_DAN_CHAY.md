@@ -1,9 +1,10 @@
 # Hướng dẫn thực thi — Extract pose → Train → Lấy số liệu cho paper/slide
 
 > Tài liệu này là quy trình **chạy thật** ngắn gọn. Chi tiết thiết kế xem
-> [`docs/1_Thuyet_Trinh_Tong_Hop.md`](docs/1_Thuyet_Trinh_Tong_Hop.md) §K. Mức báo cáo CHÍNH =
-> **5%** (train 5% split train, **dev/test luôn full**); 25/50/100% chạy thêm khi có quota. Bắt
-> buộc đúng thứ tự: **Bước 0 (extract) → Bước 1 (train)**.
+> [`docs/1_Thuyet_Trinh_Tong_Hop.md`](docs/1_Thuyet_Trinh_Tong_Hop.md) §K. Thiết kế báo cáo = **3
+> mức subset PHOENIX 5 / 10 / 25%** (train %split train, **dev/test luôn full**; 5% đã xong làm mốc,
+> 10/25% chạy tiếp khi có quota) + **thí nghiệm phụ How2Sign 10/25%** ("train thử", work_dir riêng).
+> Bắt buộc đúng thứ tự: **Bước 0 (extract) → Bước 1 (train)**.
 >
 > Nhánh **gloss/P7** và **RL-ngoài-decoder** đã gỡ khỏi pipeline — xem
 > [`docs/2_Huong_Phat_Trien.md`](docs/2_Huong_Phat_Trien.md).
@@ -81,10 +82,28 @@ Sau mỗi lần `run_all.py`, trong `/kaggle/working/`:
 | `comparison_table.csv` / `.md` | 1 bảng gộp MỌI run/subset | Tra cứu tổng |
 | `report/tables/table_*.csv` `.md` | 6 bảng lọc sẵn (main · encoders · reward · ablations · baseline · latency) | Đọc/kiểm |
 | `report/tables/tab_main.tex` `tab_reward.tex` `tab_encresults.tex` | 3 bảng LaTeX **dán thẳng vào paper** (khớp `\label{tab:main/reward/encresults}`) | **Paper** |
-| `report/figures/*.pdf` `*.png` | 5 biểu đồ (BLEU/epoch · ΔBLEU/subset · reward trade-off · 6 encoder · thuật toán) | **Paper + Slide** |
+| `report/figures/*.pdf` `*.png` | 4 biểu đồ (BLEU/epoch · reward trade-off · 6 encoder · thuật toán) | **Paper + Slide** |
 
 > Lưu ý trung thực: pipeline chỉ tính **BLEU-4** (+ rep-rate, len-ratio), nên cột **BLEU-1/ROUGE-L
 > trong `tab_main` để `--`**, không bịa số. Muốn có thật phải thêm code vào `evaluate()`.
+
+### Bảng TỔNG gộp mọi subset + dataset (khi có >1 mức / có How2Sign)
+
+`run_all.py` sinh bảng **cho từng work_dir**. Muốn gộp 5/10/25% (và PHOENIX vs How2Sign) vào **một
+bảng pivot** để dán slide, chạy thêm (chỉ đọc, không train):
+
+```bash
+python scripts/make_overview.py --root phoenix=/kaggle/working --out results/overview
+# 2 dataset: train mỗi cái vào work_dir riêng rồi trỏ 2 root
+python scripts/make_overview.py --root phoenix=<dir1> --root how2sign=<dir2> --out results/overview
+python scripts/make_overview.py --root phoenix=/kaggle/working --manifest   # file có/thiếu + dung lượng
+```
+→ `overview.md` + `.csv`. Ô `–` = chưa train (không bịa số).
+
+**Tải file nào về từ Kaggle?** Chỉ cần **`*.json`** trong mỗi run: `test_results.json` (bắt buộc),
+`*_history.json`, `latency_*.json`. **BỎ** `best_*.pt`/`last_*.pt` (~43MB/cái) và `.done_*` — không
+cần để dựng bảng. Ma trận 5% chỉ ~**0.14 MB** JSON so với ~**1.5 GB** checkpoint. Xem chi tiết ở
+[`README.md`](README.md) mục "Bảng TỔNG".
 
 ---
 

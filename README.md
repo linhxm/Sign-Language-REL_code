@@ -81,12 +81,16 @@ Quy trình chuẩn gồm **2 bước** (2 notebook Kaggle riêng biệt):
 python data/extract_poses.py \
     --input_dir <PHOENIX-2014-T>/features/fullFrame-210x260px --out_dir ./poses_out
 
-# 2) TRAIN. Mức báo cáo CHÍNH = 5%. MỘT lệnh cho toàn bộ ma trận, resumable (hết giờ session cứ
-#    chạy lại ĐÚNG lệnh, bước đã xong tự bỏ qua). Cuối mỗi lần chạy tự sinh bảng + biểu đồ trong
-#    <work_dir>/report/:
-python run_all.py --subset 0.05              # toàn ma trận ở 5% (~6-9h)
+# 2) TRAIN. Thiết kế báo cáo = 3 mức subset PHOENIX 5 / 10 / 25% (5% đã xong, làm mốc; 10/25% chạy
+#    tiếp khi có quota) + 1 THÍ NGHIỆM PHỤ ("train thử") trên How2Sign 10/25%. MỘT lệnh cho toàn bộ
+#    ma trận mỗi mức, resumable (hết giờ session cứ chạy lại ĐÚNG lệnh, bước đã xong tự bỏ qua).
+#    Cuối mỗi lần chạy tự sinh bảng + biểu đồ trong <work_dir>/report/:
+python run_all.py --subset 0.05              # toàn ma trận ở 5%  (~6-9h) — đã chạy
+python run_all.py --subset 0.10              # 10% (~12-18h)
+python run_all.py --subset 0.25              # 25% (~20-25h)
 python run_all.py --subset 0.05 --groups core,encoders   # giới hạn phạm vi để debug nhanh
-python run_all.py --subset 0.25              # chạy thêm khi có quota
+#    How2Sign (thí nghiệm phụ): train vào work_dir RIÊNG để tách dataset — pose trích bằng
+#    --mode video (xem data/extract_poses.py), rồi trỏ make_overview.py vào từng root (xem dưới).
 
 # 3) (Tuỳ chọn) chạy hẹp/tay 1 cấu hình:
 python train_select.py --mode single --encoder transformer --algo scst --subset 0.05
@@ -94,6 +98,7 @@ python main.py --subset 0.05 --encoder transformer --algo scst --phase all
 python scripts/eval_baselines.py --subset 0.05
 python scripts/aggregate_results.py --work_dir /kaggle/working --out /kaggle/working/comparison_table
 python scripts/make_report.py --work_dir /kaggle/working
+python scripts/make_overview.py --root phoenix=/kaggle/working --out /kaggle/working/overview  # bảng TỔNG
 ```
 
 **Nhóm thí nghiệm hợp lệ cho `--groups`:** `core` (Transformer XE+SCST) · `encoders` (5 encoder còn
@@ -111,6 +116,38 @@ quả đã có, không train gì thêm). Output trong `<work_dir>/report/`:
 | `tables/tab_main.tex` `tab_reward.tex` `tab_encresults.tex` | Dán thẳng vào `paper/sn-article.tex`. Cột BLEU-1/ROUGE-L để `--` vì pipeline chỉ tính BLEU-4 — không bịa số |
 | `figures/*.png` `*.pdf` | 4 biểu đồ (cột có SỐ trên biểu đồ): BLEU theo epoch (RL rẽ nhánh từ đúng điểm warm-start XE) · trade-off reward ablation · so sánh 6 encoder · so sánh thuật toán. *(Đã bỏ "ΔBLEU theo subset" vì mỗi subset train đủ epoch độc lập → so sánh giữa subset vô nghĩa.)* |
 
+## Bảng TỔNG (pivot) gộp mọi subset + dataset — `scripts/make_overview.py`
+
+Khi đã có nhiều mức subset (5/10/25%) và/hoặc How2Sign, dùng `make_overview.py` để gộp TẤT CẢ vào
+**một bảng pivot** (hàng = method/encoder, cột = subset%, tách theo dataset) — thay vì mở từng
+`comparison_table`. Chỉ đọc, không train. Ô `–` = subset/dataset đó CHƯA train (không bịa số).
+
+```bash
+# 1 dataset (mặc định phoenix):
+python scripts/make_overview.py --root phoenix=/kaggle/working --out results/overview
+# 2 dataset song song — mỗi dataset train vào work_dir RIÊNG rồi trỏ 2 root:
+python scripts/make_overview.py \
+    --root phoenix=/kaggle/input/phoenix-runs \
+    --root how2sign=/kaggle/input/how2sign-runs \
+    --out results/overview
+python scripts/make_overview.py --root phoenix=/kaggle/working --manifest   # xem file có/thiếu + dung lượng
+```
+→ `overview.md` (dán thẳng lên slide/report) + `overview.csv`.
+
+**Sau khi train xong trên Kaggle NÊN TẢI FILE NÀO VỀ?** (output rất nặng — đừng tải hết). Với mỗi
+thư mục run chỉ cần các **file JSON nhỏ**, bỏ hẳn checkpoint:
+
+| File | Tải? | Vì sao |
+|---|---|---|
+| `test_results.json` | ✅ bắt buộc | BLEU-4 test cuối của từng method |
+| `*_history.json` (xe/rl/ppo/mrt/raml/dpo) | ✅ | best dev BLEU, rep_rate, len_ratio, #epoch |
+| `latency_*.json` | ✅ | #params, latency, throughput, peak memory |
+| `.done_*` | ⚪ bỏ được | chỉ là marker resume, không chứa số |
+| `best_*.pt` / `last_*.pt` | ❌ KHÔNG | checkpoint ~43MB/cái, chỉ cần nếu chạy lại inference |
+
+Thực tế: zip toàn bộ `*.json` là đủ dựng lại mọi bảng — ma trận 5% chỉ ~**0.14 MB** JSON so với
+~**1.5 GB** checkpoint `.pt`. Chạy `--manifest` để in chính xác file nào đang có/thiếu ở mỗi root.
+
 ## Compute (T4×2, ~30 GPU-h/tuần; epoch KHÔNG giảm theo subset)
 
 `xe_epochs=80` / `rl_epochs=20` cố định cho mọi subset → thời gian ~tỉ lệ lượng dữ liệu train.
@@ -118,11 +155,13 @@ quả đã có, không train gì thêm). Output trong `<work_dir>/report/`:
 
 | Subset | Toàn bộ ma trận (6 enc + 8 RL + reward + latency) |
 |--------|----------------------------------------------------|
-| **5%** (báo cáo chính) | **~6–9h** (gọn trong quota, có thể 1 session) |
-| 25%    | ~20–25h (vừa quota 1 tuần) |
+| **5%** (đã chạy, làm mốc) | **~6–9h** (gọn trong quota, có thể 1 session) |
+| **10%** | ~12–18h |
+| **25%** | ~20–25h (vừa quota 1 tuần) |
+| How2Sign 10/25% (phụ) | tương tự, work_dir riêng |
 | 100%   | rất lớn — chạy dần theo `--groups`/`train_select.py`, nhiều session |
 
-## Kết quả thực nghiệm 5% (test BLEU-4, đã chạy)
+## Kết quả thực nghiệm 5% (test BLEU-4, đã chạy — 10/25% + How2Sign đang chờ)
 
 | Hạng mục | Số |
 |---|---|
